@@ -15,9 +15,6 @@
     "onStartupFinished",
     "onView:cursorSubagentToggle.sidebar",
     "onCommand:cursorSubagentToggle.showActions",
-    "onCommand:cursorSubagentToggle.openItemActions",
-    "onCommand:cursorSubagentToggle.performTreeItemPrimaryAction",
-    "onCommand:cursorSubagentToggle.performTreeItemRecommendedAction",
     "onCommand:cursorSubagentToggle.toggleGlobal",
     "onCommand:cursorSubagentToggle.toggleCurrentWorkspaceFolder",
     "onCommand:cursorSubagentToggle.toggleWorkspaceFolder",
@@ -40,18 +37,6 @@
       {
         "command": "cursorSubagentToggle.showActions",
         "title": "Cursor Subagent Toggle: Open Controls"
-      },
-      {
-        "command": "cursorSubagentToggle.openItemActions",
-        "title": "Cursor Subagent Toggle: Open Item Actions"
-      },
-      {
-        "command": "cursorSubagentToggle.performTreeItemPrimaryAction",
-        "title": "Cursor Subagent Toggle: Toggle Selected Scope"
-      },
-      {
-        "command": "cursorSubagentToggle.performTreeItemRecommendedAction",
-        "title": "Cursor Subagent Toggle: Apply Recommended Config To Selected Scope"
       },
       {
         "command": "cursorSubagentToggle.toggleGlobal",
@@ -95,7 +80,8 @@
       "cursorSubagentToggle": [
         {
           "id": "cursorSubagentToggle.sidebar",
-          "name": "Subagent Status"
+          "name": "Subagent Status",
+          "type": "webview"
         }
       ]
     },
@@ -110,18 +96,6 @@
           "command": "cursorSubagentToggle.showActions",
           "when": "view == cursorSubagentToggle.sidebar",
           "group": "navigation"
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "cursorSubagentToggle.performTreeItemPrimaryAction",
-          "when": "view == cursorSubagentToggle.sidebar && (viewItem == scope-global || viewItem == scope-workspace || viewItem == scope-global-unknown || viewItem == scope-workspace-unknown)",
-          "group": "inline"
-        },
-        {
-          "command": "cursorSubagentToggle.performTreeItemRecommendedAction",
-          "when": "view == cursorSubagentToggle.sidebar && (viewItem == scope-global-unknown || viewItem == scope-workspace-unknown)",
-          "group": "inline"
         }
       ]
     }
