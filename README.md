@@ -84,12 +84,15 @@ workspace에 여러 폴더가 열려 있으면:
 ## 구현 메모
 
 - managed blocker는 항상 `subagentStart` 배열의 맨 앞에 넣습니다
-- 기존 다른 hook들은 그대로 보존합니다
-- custom `subagentStart` hook이 있으면 실제 deny/allow를 안전하게 추론할 수 없어서 `CHECK`로 표시합니다
+- 일반 토글은 `hooks.subagentStart`만 수정합니다
+- `CHECK` 상태에서 토글하려고 하면 `Apply Recommended Config` 버튼이 나타나고, 누르면 `subagentStart`만 extension 권장 형식으로 덮어씁니다
+- 이 권장 덮어쓰기는 기존 custom `subagentStart` 항목을 제거하고 managed blocker 하나만 남깁니다
 
 ## 설치 및 실행
 
-이 저장소는 build step 없이 plain JavaScript로 작성되어 있습니다.
+실행 엔트리는 `out/extension.js`이고, 소스 오브 트루스는 `src/extension.ts`입니다.
+
+현재 저장소에는 TypeScript 소스와 체크인된 빌드 결과를 함께 넣어두었습니다. 로컬에 `tsc`가 없더라도 바로 실행할 수 있습니다.
 
 1. Cursor 또는 VS Code에서 이 폴더를 엽니다.
 2. Extension Development Host로 실행하거나, 필요하면 VSIX로 패키징합니다.
@@ -99,6 +102,9 @@ workspace에 여러 폴더가 열려 있으면:
 - `Cursor Subagent Toggle: Toggle Global Blocker`
 - `Cursor Subagent Toggle: Toggle Current Workspace Folder Blocker`
 - `Cursor Subagent Toggle: Toggle Workspace Folder Blocker`
+- `Cursor Subagent Toggle: Apply Recommended Global Config`
+- `Cursor Subagent Toggle: Apply Recommended Config For Current Workspace Folder`
+- `Cursor Subagent Toggle: Apply Recommended Config For Workspace Folder`
 - `Cursor Subagent Toggle: Refresh Status`
 
 ## 참고

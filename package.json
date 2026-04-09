@@ -17,9 +17,20 @@
     "onCommand:cursorSubagentToggle.toggleGlobal",
     "onCommand:cursorSubagentToggle.toggleCurrentWorkspaceFolder",
     "onCommand:cursorSubagentToggle.toggleWorkspaceFolder",
+    "onCommand:cursorSubagentToggle.applyRecommendedGlobal",
+    "onCommand:cursorSubagentToggle.applyRecommendedCurrentWorkspaceFolder",
+    "onCommand:cursorSubagentToggle.applyRecommendedWorkspaceFolder",
     "onCommand:cursorSubagentToggle.refresh"
   ],
-  "main": "./src/extension.js",
+  "main": "./out/extension.js",
+  "scripts": {
+    "build": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@types/vscode": "^1.95.0",
+    "typescript": "^5.8.3"
+  },
   "contributes": {
     "commands": [
       {
@@ -37,6 +48,18 @@
       {
         "command": "cursorSubagentToggle.toggleWorkspaceFolder",
         "title": "Cursor Subagent Toggle: Toggle Workspace Folder Blocker"
+      },
+      {
+        "command": "cursorSubagentToggle.applyRecommendedGlobal",
+        "title": "Cursor Subagent Toggle: Apply Recommended Global Config"
+      },
+      {
+        "command": "cursorSubagentToggle.applyRecommendedCurrentWorkspaceFolder",
+        "title": "Cursor Subagent Toggle: Apply Recommended Config For Current Workspace Folder"
+      },
+      {
+        "command": "cursorSubagentToggle.applyRecommendedWorkspaceFolder",
+        "title": "Cursor Subagent Toggle: Apply Recommended Config For Workspace Folder"
       },
       {
         "command": "cursorSubagentToggle.refresh",

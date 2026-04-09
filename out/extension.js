@@ -8,6 +8,7 @@ const vscode = require('vscode');
 
 const GLOBAL_COMMAND = 'bash hooks/block-subagent.sh';
 const PROJECT_COMMAND = 'bash .cursor/hooks/block-subagent.sh';
+const APPLY_RECOMMENDED_LABEL = 'Apply Recommended Config';
 const BLOCKER_SCRIPT = `#!/bin/bash
 
 # Return a deny decision for Cursor's subagent hook.
@@ -43,6 +44,7 @@ class SubagentStatusController {
     this.snapshot = null;
     this.globalWatchTargets = [];
     this.refreshTimer = undefined;
+    this.handleGlobalWatchChange = undefined;
   }
 
   async activate() {
@@ -55,9 +57,13 @@ class SubagentStatusController {
 
   dispose() {
     this.clearScheduledRefresh();
-    for (const target of this.globalWatchTargets) {
-      fs.unwatchFile(target, this.handleGlobalWatchChange);
+
+    if (this.handleGlobalWatchChange) {
+      for (const target of this.globalWatchTargets) {
+        fs.unwatchFile(target, this.handleGlobalWatchChange);
+      }
     }
+
     this.globalWatchTargets = [];
   }
 
@@ -67,6 +73,9 @@ class SubagentStatusController {
       vscode.commands.registerCommand('cursorSubagentToggle.toggleGlobal', () => this.toggleGlobal()),
       vscode.commands.registerCommand('cursorSubagentToggle.toggleCurrentWorkspaceFolder', () => this.toggleCurrentWorkspaceFolder()),
       vscode.commands.registerCommand('cursorSubagentToggle.toggleWorkspaceFolder', () => this.toggleWorkspaceFolder()),
+      vscode.commands.registerCommand('cursorSubagentToggle.applyRecommendedGlobal', () => this.applyRecommendedGlobal()),
+      vscode.commands.registerCommand('cursorSubagentToggle.applyRecommendedCurrentWorkspaceFolder', () => this.applyRecommendedCurrentWorkspaceFolder()),
+      vscode.commands.registerCommand('cursorSubagentToggle.applyRecommendedWorkspaceFolder', () => this.applyRecommendedWorkspaceFolder()),
       vscode.commands.registerCommand('cursorSubagentToggle.refresh', () => this.refresh(true))
     ];
 
@@ -88,7 +97,9 @@ class SubagentStatusController {
     this.context.subscriptions.push(
       hookWatcher,
       scriptWatcher,
-      vscode.workspace.onDidChangeWorkspaceFolders(() => this.refresh()),
+      vscode.workspace.onDidChangeWorkspaceFolders(() => {
+        void this.refresh();
+      }),
       vscode.window.onDidChangeActiveTextEditor(() => this.renderStatusBar())
     );
   }
@@ -107,7 +118,7 @@ class SubagentStatusController {
   scheduleRefresh() {
     this.clearScheduledRefresh();
     this.refreshTimer = setTimeout(() => {
-      this.refresh().catch((error) => this.showError(error));
+      void this.refresh().catch((error) => this.showError(error));
     }, 200);
   }
 
@@ -151,12 +162,25 @@ class SubagentStatusController {
     await this.refresh();
 
     const snapshot = this.snapshot;
+    if (!snapshot) {
+      return;
+    }
+
     const picks = [];
     const global = snapshot.globalScope;
     picks.push({
       label: global.status === 'blocked' ? '🟢 Global: enable subagent everywhere' : '🔴 Global: disable subagent everywhere',
-      detail: `${formatShortPath(global.hooksJsonPath)}`
+      detail: formatShortPath(global.hooksJsonPath),
+      action: 'toggleGlobal'
     });
+
+    if (global.status === 'unknown') {
+      picks.push({
+        label: '✨ Global: apply recommended config',
+        detail: 'Replace only hooks.subagentStart with the extension-managed blocker.',
+        action: 'applyRecommendedGlobal'
+      });
+    }
 
     const activeWorkspaceState = getActiveWorkspaceState(snapshot.workspaceStates);
     if (activeWorkspaceState) {
@@ -165,62 +189,103 @@ class SubagentStatusController {
         label: activeWorkspaceState.local.status === 'blocked'
           ? `🟢 Folder: enable ${activeWorkspaceState.folder.name}`
           : `🔴 Folder: disable ${activeWorkspaceState.folder.name}`,
-        detail: `${localMeta.icon} local ${localMeta.label} at ${formatShortPath(activeWorkspaceState.local.hooksJsonPath)}`
+        detail: `${localMeta.icon} local ${localMeta.label} at ${formatShortPath(activeWorkspaceState.local.hooksJsonPath)}`,
+        action: 'toggleCurrentWorkspace'
       });
+
+      if (activeWorkspaceState.local.status === 'unknown') {
+        picks.push({
+          label: `✨ Folder: apply recommended config for ${activeWorkspaceState.folder.name}`,
+          detail: 'Replace only hooks.subagentStart with the extension-managed blocker.',
+          action: 'applyRecommendedCurrentWorkspace'
+        });
+      }
     }
 
     if (snapshot.workspaceStates.length > 1) {
       picks.push({
         label: '📁 Folder: choose another workspace folder',
-        detail: 'Toggle the blocker for one specific folder in this multi-root workspace.'
+        detail: 'Toggle the blocker for one specific folder in this multi-root workspace.',
+        action: 'toggleWorkspaceFolder'
       });
+
+      if (snapshot.workspaceStates.some((state) => state.local.status === 'unknown')) {
+        picks.push({
+          label: '✨ Folder: choose another workspace folder for recommended config',
+          detail: 'Replace only hooks.subagentStart in one folder with the extension-managed blocker.',
+          action: 'applyRecommendedWorkspaceFolder'
+        });
+      }
     }
 
     picks.push({
       label: '🔄 Refresh status',
-      detail: 'Re-scan global and workspace hook files.'
+      detail: 'Re-scan global and workspace hook files.',
+      action: 'refresh'
     });
 
     const choice = await vscode.window.showQuickPick(picks, {
       title: 'Cursor Subagent Toggle',
-      placeHolder: 'Choose which scope to toggle.'
+      placeHolder: 'Choose which scope to toggle or normalize.'
     });
 
     if (!choice) {
       return;
     }
 
-    if (choice.label.startsWith('🟢 Global') || choice.label.startsWith('🔴 Global')) {
-      await this.toggleGlobal();
-      return;
+    switch (choice.action) {
+      case 'toggleGlobal':
+        await this.toggleGlobal();
+        break;
+      case 'toggleCurrentWorkspace':
+        await this.toggleCurrentWorkspaceFolder();
+        break;
+      case 'toggleWorkspaceFolder':
+        await this.toggleWorkspaceFolder();
+        break;
+      case 'applyRecommendedGlobal':
+        await this.applyRecommendedGlobal();
+        break;
+      case 'applyRecommendedCurrentWorkspace':
+        await this.applyRecommendedCurrentWorkspaceFolder();
+        break;
+      case 'applyRecommendedWorkspaceFolder':
+        await this.applyRecommendedWorkspaceFolder();
+        break;
+      case 'refresh':
+        await this.refresh(true);
+        break;
     }
-
-    if (choice.label.startsWith('🟢 Folder') || choice.label.startsWith('🔴 Folder')) {
-      await this.toggleWorkspaceState(activeWorkspaceState);
-      return;
-    }
-
-    if (choice.label.startsWith('📁')) {
-      await this.toggleWorkspaceFolder();
-      return;
-    }
-
-    await this.refresh(true);
   }
 
   async toggleGlobal() {
-    const global = this.snapshot ? this.snapshot.globalScope : await inspectGlobalScope();
-    await setManagedBlock(global, global.status !== 'blocked');
+    const global = (this.snapshot && this.snapshot.globalScope) || await inspectGlobalScope();
+
+    if (global.status === 'unknown') {
+      const confirmed = await confirmRecommendedOverwrite(global);
+      if (!confirmed) {
+        return;
+      }
+
+      await applyRecommendedBlock(global);
+    } else {
+      await setManagedBlock(global, global.status !== 'blocked');
+    }
+
     await this.refresh(true);
 
-    const nextGlobal = this.snapshot.globalScope;
+    const nextGlobal = this.snapshot && this.snapshot.globalScope;
+    if (!nextGlobal) {
+      return;
+    }
+
     const meta = STATUS_META[nextGlobal.status] || STATUS_META.unknown;
     vscode.window.showInformationMessage(`Global subagent status: ${meta.icon} ${meta.label}`);
   }
 
   async toggleCurrentWorkspaceFolder() {
     await this.refresh();
-    const activeWorkspaceState = getActiveWorkspaceState(this.snapshot.workspaceStates);
+    const activeWorkspaceState = getActiveWorkspaceState((this.snapshot && this.snapshot.workspaceStates) || []);
 
     if (!activeWorkspaceState) {
       vscode.window.showWarningMessage('No active workspace folder was found to toggle.');
@@ -232,13 +297,14 @@ class SubagentStatusController {
 
   async toggleWorkspaceFolder() {
     await this.refresh();
+    const workspaceStates = (this.snapshot && this.snapshot.workspaceStates) || [];
 
-    if (!this.snapshot.workspaceStates.length) {
+    if (!workspaceStates.length) {
       vscode.window.showWarningMessage('This window does not have any workspace folders.');
       return;
     }
 
-    const picked = await pickWorkspaceState(this.snapshot.workspaceStates);
+    const picked = await pickWorkspaceState(workspaceStates);
     if (!picked) {
       return;
     }
@@ -247,16 +313,66 @@ class SubagentStatusController {
   }
 
   async toggleWorkspaceState(workspaceState) {
-    await setManagedBlock(workspaceState.local, workspaceState.local.status !== 'blocked');
+    if (workspaceState.local.status === 'unknown') {
+      const confirmed = await confirmRecommendedOverwrite(workspaceState.local);
+      if (!confirmed) {
+        return;
+      }
+
+      await applyRecommendedBlock(workspaceState.local);
+    } else {
+      await setManagedBlock(workspaceState.local, workspaceState.local.status !== 'blocked');
+    }
+
     await this.refresh(true);
 
-    const updatedState = this.snapshot.workspaceStates.find((item) => item.folder.uri.toString() === workspaceState.folder.uri.toString());
+    const updatedState = this.snapshot && this.snapshot.workspaceStates.find((item) => item.folder.uri.toString() === workspaceState.folder.uri.toString());
     if (!updatedState) {
       return;
     }
 
     const effectiveMeta = STATUS_META[updatedState.status] || STATUS_META.unknown;
     vscode.window.showInformationMessage(`${updatedState.folder.name}: ${effectiveMeta.icon} ${effectiveMeta.label}`);
+  }
+
+  async applyRecommendedGlobal() {
+    const global = (this.snapshot && this.snapshot.globalScope) || await inspectGlobalScope();
+    await applyRecommendedBlock(global);
+    await this.refresh(true);
+    vscode.window.showInformationMessage('Global subagentStart was replaced with the recommended blocker config.');
+  }
+
+  async applyRecommendedCurrentWorkspaceFolder() {
+    await this.refresh();
+    const activeWorkspaceState = getActiveWorkspaceState((this.snapshot && this.snapshot.workspaceStates) || []);
+
+    if (!activeWorkspaceState) {
+      vscode.window.showWarningMessage('No active workspace folder was found to normalize.');
+      return;
+    }
+
+    await applyRecommendedBlock(activeWorkspaceState.local);
+    await this.refresh(true);
+    vscode.window.showInformationMessage(`${activeWorkspaceState.folder.name}: subagentStart was replaced with the recommended blocker config.`);
+  }
+
+  async applyRecommendedWorkspaceFolder() {
+    await this.refresh();
+    const workspaceStates = (this.snapshot && this.snapshot.workspaceStates) || [];
+
+    if (!workspaceStates.length) {
+      vscode.window.showWarningMessage('This window does not have any workspace folders.');
+      return;
+    }
+
+    const picked = await pickWorkspaceState(workspaceStates);
+    if (!picked) {
+      return;
+    }
+
+    await applyRecommendedBlock(picked.local);
+    await this.refresh(true);
+    vscode.window.showInformationMessage(`${picked.folder.name}: subagentStart was replaced with the recommended blocker config.`);
   }
 
   showError(error) {
@@ -284,10 +400,15 @@ function buildErrorSnapshot(error) {
     globalScope: {
       type: 'global',
       name: 'Global',
-      status: 'error',
-      reason,
+      baseDir: getGlobalCursorDir(),
       hooksJsonPath: getGlobalHooksJsonPath(),
-      scriptPath: getGlobalScriptPath()
+      scriptPath: getGlobalScriptPath(),
+      managedCommand: GLOBAL_COMMAND,
+      configExists: false,
+      scriptExists: false,
+      scriptLooksLikeBlocker: false,
+      status: 'error',
+      reason
     },
     workspaceStates: [],
     aggregate: {
@@ -339,8 +460,9 @@ async function inspectScope(scope) {
     };
   }
 
-  const hooksRoot = configState.data && typeof configState.data === 'object' ? configState.data.hooks : undefined;
-  const subagentHooks = hooksRoot ? hooksRoot.subagentStart : undefined;
+  const hooksConfig = configState.data;
+  const hooksRoot = isObject(hooksConfig) && isObject(hooksConfig.hooks) ? hooksConfig.hooks : undefined;
+  const subagentHooks = hooksRoot && hooksRoot.subagentStart;
 
   if (subagentHooks !== undefined && !Array.isArray(subagentHooks)) {
     return {
@@ -353,13 +475,13 @@ async function inspectScope(scope) {
   const hookEntries = Array.isArray(subagentHooks) ? subagentHooks : [];
   const commandEntries = hookEntries.map((entry, index) => ({
     index,
-    command: entry && typeof entry === 'object' && typeof entry.command === 'string' ? entry.command : undefined
+    command: isCommandEntry(entry) ? entry.command : undefined
   }));
 
   const managedIndex = commandEntries.findIndex((entry) => entry.command === scope.managedCommand);
   const hasAnySubagentHooks = hookEntries.length > 0;
   const hasCustomCommands = commandEntries.some((entry) => entry.command && entry.command !== scope.managedCommand);
-  const hasInvalidEntries = hookEntries.some((entry) => !entry || typeof entry !== 'object' || typeof entry.command !== 'string');
+  const hasInvalidEntries = hookEntries.some((entry) => !isCommandEntry(entry));
 
   if (managedIndex === 0) {
     if (!scriptState.exists) {
@@ -516,43 +638,57 @@ function summarizeWorkspaceState(globalScope, workspaceStates) {
 }
 
 async function setManagedBlock(scope, shouldBlock) {
-  const configState = await readJsonFile(scope.hooksJsonPath);
-  if (configState.error) {
-    throw new Error(`Fix invalid JSON first: ${formatShortPath(scope.hooksJsonPath)}`);
-  }
-
-  if (configState.data && typeof configState.data === 'object' && configState.data.hooks !== undefined) {
-    if (!configState.data.hooks || typeof configState.data.hooks !== 'object' || Array.isArray(configState.data.hooks)) {
-      throw new Error(`Fix invalid hooks object first: ${formatShortPath(scope.hooksJsonPath)}`);
-    }
-
-    if (configState.data.hooks.subagentStart !== undefined && !Array.isArray(configState.data.hooks.subagentStart)) {
-      throw new Error(`Fix invalid subagentStart first: ${formatShortPath(scope.hooksJsonPath)}`);
-    }
-  }
-
-  const data = normalizeHooksConfig(configState.data);
+  const data = await loadEditableHooksConfig(scope.hooksJsonPath);
   const existing = Array.isArray(data.hooks.subagentStart) ? [...data.hooks.subagentStart] : [];
-  const withoutManaged = existing.filter((entry) => !(entry && typeof entry === 'object' && entry.command === scope.managedCommand));
+  const withoutManaged = existing.filter((entry) => entry.command !== scope.managedCommand);
 
   if (shouldBlock) {
     withoutManaged.unshift({ command: scope.managedCommand });
     await ensureManagedScript(scope.scriptPath);
   }
 
-  if (withoutManaged.length > 0) {
-    data.hooks.subagentStart = withoutManaged;
-  } else {
-    delete data.hooks.subagentStart;
+  await writeSubagentStart(scope.hooksJsonPath, data, withoutManaged.length > 0 ? withoutManaged : undefined);
+}
+
+async function applyRecommendedBlock(scope) {
+  const data = await loadEditableHooksConfig(scope.hooksJsonPath);
+  await ensureManagedScript(scope.scriptPath);
+  await writeSubagentStart(scope.hooksJsonPath, data, [{ command: scope.managedCommand }]);
+}
+
+async function loadEditableHooksConfig(hooksJsonPath) {
+  const configState = await readJsonFile(hooksJsonPath);
+  if (configState.error) {
+    throw new Error(`Fix invalid JSON first: ${formatShortPath(hooksJsonPath)}`);
   }
 
-  await fsp.mkdir(path.dirname(scope.hooksJsonPath), { recursive: true });
-  await fsp.writeFile(scope.hooksJsonPath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+  if (isObject(configState.data) && configState.data.hooks !== undefined) {
+    if (!isObject(configState.data.hooks)) {
+      throw new Error(`Fix invalid hooks object first: ${formatShortPath(hooksJsonPath)}`);
+    }
+
+    if (configState.data.hooks.subagentStart !== undefined && !Array.isArray(configState.data.hooks.subagentStart)) {
+      throw new Error(`Fix invalid subagentStart first: ${formatShortPath(hooksJsonPath)}`);
+    }
+  }
+
+  return normalizeHooksConfig(configState.data);
+}
+
+async function writeSubagentStart(hooksJsonPath, config, subagentStart) {
+  if (subagentStart && subagentStart.length > 0) {
+    config.hooks.subagentStart = subagentStart;
+  } else {
+    delete config.hooks.subagentStart;
+  }
+
+  await fsp.mkdir(path.dirname(hooksJsonPath), { recursive: true });
+  await fsp.writeFile(hooksJsonPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
 }
 
 function normalizeHooksConfig(input) {
-  const base = input && typeof input === 'object' && !Array.isArray(input) ? { ...input } : {};
-  const hooks = base.hooks && typeof base.hooks === 'object' && !Array.isArray(base.hooks) ? { ...base.hooks } : {};
+  const base = isObject(input) ? { ...input } : {};
+  const hooks = isObject(base.hooks) ? { ...base.hooks } : {};
 
   return {
     ...base,
@@ -577,15 +713,13 @@ async function readJsonFile(filePath) {
   } catch (error) {
     if (error && error.code === 'ENOENT') {
       return {
-        exists: false,
-        data: undefined
+        exists: false
       };
     }
 
     if (error instanceof SyntaxError) {
       return {
         exists: true,
-        data: undefined,
         error
       };
     }
@@ -614,6 +748,15 @@ async function readScriptFile(filePath) {
 
     throw error;
   }
+}
+
+async function confirmRecommendedOverwrite(scope) {
+  const response = await vscode.window.showWarningMessage(
+    `Custom subagentStart hooks were detected in ${formatShortPath(scope.hooksJsonPath)}. Replace only hooks.subagentStart with the extension's recommended blocker config?`,
+    APPLY_RECOMMENDED_LABEL
+  );
+
+  return response === APPLY_RECOMMENDED_LABEL;
 }
 
 function getActiveWorkspaceState(workspaceStates) {
@@ -655,7 +798,7 @@ async function pickWorkspaceState(workspaceStates) {
     placeHolder: 'Toggle the blocker in one workspace folder.'
   });
 
-  return choice ? choice.state : undefined;
+  return choice && choice.state;
 }
 
 function buildTooltip(snapshot, activeWorkspaceState) {
@@ -714,6 +857,14 @@ function getGlobalHooksJsonPath() {
 
 function getGlobalScriptPath() {
   return path.join(getGlobalCursorDir(), 'hooks', 'block-subagent.sh');
+}
+
+function isObject(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isCommandEntry(value) {
+  return isObject(value) && typeof value.command === 'string';
 }
 
 module.exports = {
