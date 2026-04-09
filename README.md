@@ -1,148 +1,133 @@
 # Cursor Subagent Toggle
 
-Cursor에서 subagent 생성을 빠르게 켜고 끄기 위한 extension입니다.
+## English
 
-- 현재 workspace 폴더의 `.cursor/hooks.json`
-- 전역 설정인 `~/.cursor/hooks.json`
-- multi-root workspace에서 각 폴더별 최종 적용 상태
+Cursor Subagent Toggle controls whether Cursor can create subagents by managing `subagentStart` hooks in:
 
-를 함께 스캔해서 Cursor 하단 status bar와 전용 사이드바에 보여주고, 전역 또는 폴더 단위 blocker를 토글 스위치로 제어합니다.
+- Local workspace folder: `.cursor/hooks.json`
+- Global user scope: `~/.cursor/hooks.json`
 
-## 사이드바
+The extension shows both scopes together in a dedicated sidebar and in the status bar, including support for multi-root workspaces.
 
-- Activity Bar에 `Subagent` 아이콘이 추가됩니다
-- 그 안의 `Subagent Status` 뷰에서 현재 창 요약, global 상태, workspace 폴더별 상태를 바로 볼 수 있습니다
-- 각 scope 카드에 토글 스위치가 있어서 바로 켜고 끌 수 있습니다
-- `CHECK` 상태에는 `Apply Recommended Config` 버튼이 함께 표시됩니다
-- 상단 language selector에서 `English / 한국어`를 즉시 전환할 수 있습니다
+### Main Features
 
-## 동작 방식
+- Sidebar cards for global and each workspace folder
+- Small toggle switch per scope
+- Live final-status summary in the status bar
+- Language selector (`English / 한국어`)
+- Safe handling for custom `subagentStart` hooks (`CHECK` state)
+- One-click `Apply Recommended Config` to replace only `hooks.subagentStart`
 
-이 extension은 `subagentStart` hook에 deny helper를 넣어서 subagent 생성을 차단합니다.
+### Toggle Semantics
 
-프로젝트 스코프에서는 아래 command를 사용합니다.
+- Toggle `ON` means subagent is enabled in that local scope.
+- Toggle `OFF` means managed blocker is enabled in that local scope.
+- Effective final state still follows Cursor scope priority (global can override local).
+
+### Status Model
+
+- `🟢 ON`: No blocking hook is applied.
+- `🔴 OFF`: Managed blocking hook is applied.
+- `🟡 MIXED`: Different effective states across folders in multi-root.
+- `⚪ CHECK`: Custom `subagentStart` exists, so safe ON/OFF inference is not possible.
+- `🟠 ERROR`: Invalid `hooks.json` or missing managed script.
+
+### Priority Rules
+
+- If global scope is `OFF`, effective state is `OFF` for all folders.
+- If global scope is `ON`, each folder follows its own local state.
+- Multi-root view shows global, local, and effective status per folder.
+
+### Managed Hook Shape
+
+Workspace blocker command:
 
 ```json
 {
   "version": 1,
   "hooks": {
     "subagentStart": [
-      {
-        "command": "bash .cursor/hooks/block-subagent.sh"
-      }
+      { "command": "bash .cursor/hooks/block-subagent.sh" }
     ]
   }
 }
 ```
 
-전역 스코프에서는 `~/.cursor/hooks.json` 기준으로 실행 경로가 달라지므로 아래 command를 사용합니다.
+Global blocker command:
 
 ```json
 {
   "version": 1,
   "hooks": {
     "subagentStart": [
-      {
-        "command": "bash hooks/block-subagent.sh"
-      }
+      { "command": "bash hooks/block-subagent.sh" }
     ]
   }
 }
 ```
 
-helper script는 각 스코프에 맞춰 자동 생성됩니다.
+## 한국어
 
-```bash
-#!/bin/bash
-echo '{"decision": "deny", "permission": "deny"}'
-echo "Subagent creation is BLOCKED by Cursor Subagent Toggle." >&2
-exit 2
+Cursor Subagent Toggle은 아래 두 범위의 `subagentStart` hook을 관리해서, Cursor의 subagent 생성 허용 여부를 제어합니다.
+
+- 로컬 워크스페이스 폴더: `.cursor/hooks.json`
+- 전역 사용자 범위: `~/.cursor/hooks.json`
+
+확장은 전용 사이드바와 status bar에서 전역/로컬 상태를 함께 보여주며, 멀티 루트 워크스페이스도 지원합니다.
+
+### 주요 기능
+
+- 전역 카드 + 워크스페이스 폴더별 카드 제공
+- 범위별 작은 토글 스위치 제공
+- status bar에 최종 상태 실시간 요약 표시
+- 언어 선택기 (`English / 한국어`)
+- 커스텀 `subagentStart`에 대한 안전 모드(`CHECK` 상태)
+- `Apply Recommended Config` 버튼으로 `hooks.subagentStart`만 권장 설정으로 교체
+
+### 토글 의미
+
+- 토글 `ON`: 해당 로컬 범위에서 subagent 활성화
+- 토글 `OFF`: 해당 로컬 범위에서 managed blocker 활성화
+- 최종 상태는 Cursor 범위 우선순위(전역 우선)의 영향을 받음
+
+### 상태 모델
+
+- `🟢 ON`: 차단 hook 없음
+- `🔴 OFF`: managed 차단 hook 적용됨
+- `🟡 MIXED`: 멀티 루트에서 폴더별 최종 상태가 다름
+- `⚪ CHECK`: 커스텀 `subagentStart`가 있어 ON/OFF를 안전하게 단정할 수 없음
+- `🟠 ERROR`: `hooks.json` 파싱 오류 또는 managed 스크립트 누락
+
+### 우선순위 규칙
+
+- 전역이 `OFF`면 모든 폴더의 최종 상태는 `OFF`
+- 전역이 `ON`이면 각 폴더는 로컬 상태를 따름
+- 멀티 루트에서는 폴더별 global/local/effective 상태를 함께 표시
+
+### Managed Hook 형태
+
+워크스페이스 차단 command:
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "subagentStart": [
+      { "command": "bash .cursor/hooks/block-subagent.sh" }
+    ]
+  }
+}
 ```
 
-## 상태 계산
+전역 차단 command:
 
-- `🔴 OFF`: managed blocker가 확실하게 적용된 상태
-- `🟢 ON`: blocking hook이 없는 상태
-- `🟡 MIXED`: multi-root workspace에서 폴더마다 최종 상태가 다른 상태
-- `⚪ CHECK`: custom `subagentStart` hook이 있어서 안전하게 ON/OFF를 단정할 수 없는 상태
-- `🟠 ERROR`: `hooks.json`이 깨졌거나 managed script가 빠진 상태
-
-최종 판정 규칙은 다음과 같습니다.
-
-- global blocker가 켜져 있으면 모든 workspace folder가 `OFF`
-- global blocker가 꺼져 있어도, 특정 폴더의 `.cursor/hooks.json`에 blocker가 있으면 그 폴더만 `OFF`
-- multi-root workspace에서는 각 폴더의 `local + global`을 합쳐 최종 상태를 표시
-
-## multi-root workspace 표시
-
-workspace에 여러 폴더가 열려 있으면:
-
-- status bar는 활성 에디터가 속한 폴더의 최종 상태를 보여줍니다
-- 사이드바는 global 상태와 모든 폴더의 상태를 동시에 보여줍니다
-- hover tooltip에는 모든 폴더의 `local / global / effective` 상태를 함께 보여줍니다
-- 각 workspace folder 카드에서 직접 토글할 수 있습니다
-
-예시:
-
-- `folder-a`: local `ON`, global `OFF` => effective `OFF`
-- `folder-b`: local `OFF`, global `ON` => effective `OFF`
-- `folder-c`: local `ON`, global `ON` => effective `ON`
-
-이 경우 status bar summary는 상황에 따라 `OFF` 또는 `MIXED`로 보이고, tooltip에 각 폴더가 개별적으로 표시됩니다.
-
-## 구현 메모
-
-- managed blocker는 항상 `subagentStart` 배열의 맨 앞에 넣습니다
-- 일반 토글은 `hooks.subagentStart`만 수정합니다
-- `CHECK` 상태에서 토글하려고 하면 `Apply Recommended Config` 버튼이 나타나고, 누르면 `subagentStart`만 extension 권장 형식으로 덮어씁니다
-- 이 권장 덮어쓰기는 기존 custom `subagentStart` 항목을 제거하고 managed blocker 하나만 남깁니다
-
-## 설치 및 실행
-
-실행 엔트리는 `out/extension.js`이고, 소스 오브 트루스는 `src/extension.ts`입니다.
-
-현재 저장소에는 TypeScript 소스와 체크인된 빌드 결과를 함께 넣어두었습니다. 로컬에 `tsc`가 없더라도 바로 실행할 수 있습니다.
-
-1. Cursor 또는 VS Code에서 이 폴더를 엽니다.
-2. Extension Development Host로 실행하거나, 필요하면 VSIX로 패키징합니다.
-3. Activity Bar에서 `Subagent` 아이콘을 눌러 사이드바를 엽니다.
-4. 상단 language selector와 각 카드의 토글 스위치를 사용합니다.
-5. 필요하면 Command Palette에서도 아래 명령을 사용할 수 있습니다.
-
-- `Cursor Subagent Toggle: Open Controls`
-- `Cursor Subagent Toggle: Toggle Global Blocker`
-- `Cursor Subagent Toggle: Toggle Current Workspace Folder Blocker`
-- `Cursor Subagent Toggle: Toggle Workspace Folder Blocker`
-- `Cursor Subagent Toggle: Apply Recommended Global Config`
-- `Cursor Subagent Toggle: Apply Recommended Config For Current Workspace Folder`
-- `Cursor Subagent Toggle: Apply Recommended Config For Workspace Folder`
-- `Cursor Subagent Toggle: Refresh Status`
-
-## Open VSX 배포
-
-현재 `package.json`의 extension ID는 아래와 같습니다.
-
-- `publisher`: `taehyunkim3`
-- `name`: `cursor-subagent-toggle`
-- 최종 ID: `taehyunkim3.cursor-subagent-toggle`
-
-배포 순서:
-
-1. 빌드
-   - `npm run build`
-2. VSIX 패키징
-   - `npm run package:vsix`
-3. Open VSX 토큰 설정
-   - `export OVSX_PAT="<your-openvsx-token>"`
-4. Open VSX 게시
-   - `npm run publish:ovsx`
-
-참고:
-
-- `namespace`는 Open VSX에서의 publisher 개념이며, 이 프로젝트는 `taehyunkim3` 기준으로 맞춰져 있습니다.
-- `version`을 올리지 않으면 같은 버전 재배포가 거부됩니다.
-
-## 참고
-
-- [Cursor Hooks docs](https://cursor.com/docs/hooks)
-- [Cursor forum: global hooks cwd clarification](https://forum.cursor.com/t/best-way-to-disable-agent-shell-commands-project-vs-user-level-hook-behavior/111048)
+```json
+{
+  "version": 1,
+  "hooks": {
+    "subagentStart": [
+      { "command": "bash hooks/block-subagent.sh" }
+    ]
+  }
+}
+```
