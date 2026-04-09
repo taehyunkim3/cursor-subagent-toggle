@@ -118,6 +118,30 @@ workspace에 여러 폴더가 열려 있으면:
 - `Cursor Subagent Toggle: Apply Recommended Config For Workspace Folder`
 - `Cursor Subagent Toggle: Refresh Status`
 
+## Open VSX 배포
+
+현재 `package.json`의 extension ID는 아래와 같습니다.
+
+- `publisher`: `taehyunkim3`
+- `name`: `cursor-subagent-toggle`
+- 최종 ID: `taehyunkim3.cursor-subagent-toggle`
+
+배포 순서:
+
+1. 빌드
+   - `npm run build`
+2. VSIX 패키징
+   - `npm run package:vsix`
+3. Open VSX 토큰 설정
+   - `export OVSX_PAT="<your-openvsx-token>"`
+4. Open VSX 게시
+   - `npm run publish:ovsx`
+
+참고:
+
+- `namespace`는 Open VSX에서의 publisher 개념이며, 이 프로젝트는 `taehyunkim3` 기준으로 맞춰져 있습니다.
+- `version`을 올리지 않으면 같은 버전 재배포가 거부됩니다.
+
 ## 참고
 
 - [Cursor Hooks docs](https://cursor.com/docs/hooks)

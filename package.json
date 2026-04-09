@@ -3,13 +3,35 @@
   "displayName": "Cursor Subagent Toggle",
   "description": "Toggle Cursor subagent hooks globally and per workspace folder, with status bar feedback for single-folder and multi-root workspaces.",
   "version": "0.1.0",
-  "publisher": "local",
+  "publisher": "taehyunkim3",
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/taehyunkim3/cursor-subagent-toggle.git"
+  },
+  "bugs": {
+    "url": "https://github.com/taehyunkim3/cursor-subagent-toggle/issues"
+  },
+  "homepage": "https://github.com/taehyunkim3/cursor-subagent-toggle#readme",
   "engines": {
     "vscode": "^1.95.0"
   },
+  "keywords": [
+    "cursor",
+    "subagent",
+    "hooks",
+    "workspace",
+    "toggle"
+  ],
   "categories": [
     "Other"
+  ],
+  "files": [
+    "out/**",
+    "media/**",
+    "README.md",
+    "LICENSE",
+    "package.json"
   ],
   "activationEvents": [
     "onStartupFinished",
@@ -25,11 +47,16 @@
   ],
   "main": "./out/extension.js",
   "scripts": {
-    "build": "tsc -p ."
+    "build": "tsc -p .",
+    "vscode:prepublish": "npm run build",
+    "package:vsix": "vsce package",
+    "publish:ovsx": "ovsx publish"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
     "@types/vscode": "^1.95.0",
+    "@vscode/vsce": "^3.7.1",
+    "ovsx": "^0.10.10",
     "typescript": "^5.8.3"
   },
   "contributes": {
