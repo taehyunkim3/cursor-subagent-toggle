@@ -85,19 +85,6 @@
         }
       ]
     },
-    "menus": {
-      "view/title": [
-        {
-          "command": "cursorSubagentToggle.refresh",
-          "when": "view == cursorSubagentToggle.sidebar",
-          "group": "navigation"
-        },
-        {
-          "command": "cursorSubagentToggle.showActions",
-          "when": "view == cursorSubagentToggle.sidebar",
-          "group": "navigation"
-        }
-      ]
-    }
+    "menus": {}
   }
 }
