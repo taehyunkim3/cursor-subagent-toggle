@@ -73,9 +73,14 @@ class SubagentStatusController {
         this.statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
         this.statusBar.name = 'Cursor Subagent Toggle';
         this.statusBar.command = 'cursorSubagentToggle.showActions';
+        this.treeProvider = new SubagentSidebarProvider();
+        this.treeView = vscode.window.createTreeView('cursorSubagentToggle.sidebar', {
+            treeDataProvider: this.treeProvider,
+            showCollapseAll: false
+        });
     }
     async activate() {
-        this.context.subscriptions.push(this.statusBar);
+        this.context.subscriptions.push(this.statusBar, this.treeView);
         this.registerCommands();
         this.registerWorkspaceWatchers();
         this.registerGlobalWatchers();
@@ -93,6 +98,9 @@ class SubagentStatusController {
     registerCommands() {
         const subscriptions = [
             vscode.commands.registerCommand('cursorSubagentToggle.showActions', () => this.showActions()),
+            vscode.commands.registerCommand('cursorSubagentToggle.openItemActions', (item) => this.openItemActions(item)),
+            vscode.commands.registerCommand('cursorSubagentToggle.performTreeItemPrimaryAction', (item) => this.performTreeItemPrimaryAction(item)),
+            vscode.commands.registerCommand('cursorSubagentToggle.performTreeItemRecommendedAction', (item) => this.performTreeItemRecommendedAction(item)),
             vscode.commands.registerCommand('cursorSubagentToggle.toggleGlobal', () => this.toggleGlobal()),
             vscode.commands.registerCommand('cursorSubagentToggle.toggleCurrentWorkspaceFolder', () => this.toggleCurrentWorkspaceFolder()),
             vscode.commands.registerCommand('cursorSubagentToggle.toggleWorkspaceFolder', () => this.toggleWorkspaceFolder()),
@@ -140,10 +148,12 @@ class SubagentStatusController {
     async refresh(notifyOnError = false) {
         try {
             this.snapshot = await buildSnapshot();
+            this.treeProvider.setSnapshot(this.snapshot);
             this.renderStatusBar();
         }
         catch (error) {
             this.snapshot = buildErrorSnapshot(error);
+            this.treeProvider.setSnapshot(this.snapshot);
             this.renderStatusBar();
             if (notifyOnError) {
                 this.showError(error);
@@ -252,6 +262,115 @@ class SubagentStatusController {
                 break;
         }
     }
+    async openItemActions(item) {
+        if (!item || item.kind === 'summary' || item.kind === 'workspaceRoot' || item.kind === 'empty') {
+            await this.showActions();
+            return;
+        }
+        await this.refresh();
+        const actionItems = [];
+        if (item.kind === 'global') {
+            const global = this.snapshot?.globalScope;
+            if (!global) {
+                return;
+            }
+            actionItems.push({
+                label: global.status === 'blocked' ? '🟢 Enable subagent globally' : '🔴 Disable subagent globally',
+                detail: global.reason,
+                action: 'toggleGlobal'
+            });
+            if (global.status === 'unknown') {
+                actionItems.push({
+                    label: '✨ Apply Recommended Config',
+                    detail: 'Replace only hooks.subagentStart with the extension-managed blocker.',
+                    action: 'applyRecommendedGlobal'
+                });
+            }
+        }
+        if (item.kind === 'workspace') {
+            const workspaceState = this.snapshot?.workspaceStates.find((state) => state.folder.uri.toString() === item.workspaceState?.folder.uri.toString());
+            if (!workspaceState) {
+                return;
+            }
+            actionItems.push({
+                label: workspaceState.local.status === 'blocked'
+                    ? `🟢 Enable subagent in ${workspaceState.folder.name}`
+                    : `🔴 Disable subagent in ${workspaceState.folder.name}`,
+                detail: workspaceState.reason,
+                action: 'toggleCurrentWorkspace'
+            });
+            if (workspaceState.local.status === 'unknown') {
+                actionItems.push({
+                    label: '✨ Apply Recommended Config',
+                    detail: 'Replace only hooks.subagentStart with the extension-managed blocker.',
+                    action: 'applyRecommendedCurrentWorkspace'
+                });
+            }
+        }
+        actionItems.push({
+            label: '🔄 Refresh status',
+            detail: 'Re-scan global and workspace hook files.',
+            action: 'refresh'
+        });
+        const picked = await vscode.window.showQuickPick(actionItems, {
+            title: item.kind === 'global' ? 'Global scope' : item.workspaceState?.folder.name ?? 'Workspace folder',
+            placeHolder: 'Choose an action.'
+        });
+        if (!picked) {
+            return;
+        }
+        switch (picked.action) {
+            case 'toggleGlobal':
+                await this.toggleGlobal();
+                break;
+            case 'toggleCurrentWorkspace':
+                if (item.workspaceState) {
+                    await this.toggleWorkspaceState(item.workspaceState);
+                }
+                break;
+            case 'applyRecommendedGlobal':
+                await this.applyRecommendedGlobal();
+                break;
+            case 'applyRecommendedCurrentWorkspace':
+                if (item.workspaceState) {
+                    await this.applyRecommendedScope(item.workspaceState.local);
+                }
+                break;
+            case 'refresh':
+                await this.refresh(true);
+                break;
+        }
+    }
+    async performTreeItemPrimaryAction(item) {
+        if (!item) {
+            await this.showActions();
+            return;
+        }
+        if (item.kind === 'global') {
+            await this.toggleGlobal();
+            return;
+        }
+        if (item.kind === 'workspace' && item.workspaceState) {
+            await this.toggleWorkspaceState(item.workspaceState);
+            return;
+        }
+        await this.showActions();
+    }
+    async performTreeItemRecommendedAction(item) {
+        if (!item) {
+            await this.showActions();
+            return;
+        }
+        if (item.kind === 'global') {
+            await this.applyRecommendedGlobal();
+            return;
+        }
+        if (item.kind === 'workspace' && item.workspaceState) {
+            await this.applyRecommendedScope(item.workspaceState.local);
+            return;
+        }
+        await this.showActions();
+    }
     async toggleGlobal() {
         const global = this.snapshot?.globalScope ?? await inspectGlobalScope();
         if (global.status === 'unknown') {
@@ -315,9 +434,7 @@ class SubagentStatusController {
     }
     async applyRecommendedGlobal() {
         const global = this.snapshot?.globalScope ?? await inspectGlobalScope();
-        await applyRecommendedBlock(global);
-        await this.refresh(true);
-        vscode.window.showInformationMessage('Global subagentStart was replaced with the recommended blocker config.');
+        await this.applyRecommendedScope(global);
     }
     async applyRecommendedCurrentWorkspaceFolder() {
         await this.refresh();
@@ -326,9 +443,7 @@ class SubagentStatusController {
             vscode.window.showWarningMessage('No active workspace folder was found to normalize.');
             return;
         }
-        await applyRecommendedBlock(activeWorkspaceState.local);
-        await this.refresh(true);
-        vscode.window.showInformationMessage(`${activeWorkspaceState.folder.name}: subagentStart was replaced with the recommended blocker config.`);
+        await this.applyRecommendedScope(activeWorkspaceState.local);
     }
     async applyRecommendedWorkspaceFolder() {
         await this.refresh();
@@ -341,13 +456,67 @@ class SubagentStatusController {
         if (!picked) {
             return;
         }
-        await applyRecommendedBlock(picked.local);
-        await this.refresh(true);
-        vscode.window.showInformationMessage(`${picked.folder.name}: subagentStart was replaced with the recommended blocker config.`);
+        await this.applyRecommendedScope(picked.local);
     }
     showError(error) {
         const message = error instanceof Error ? error.message : String(error);
         vscode.window.showErrorMessage(`Cursor Subagent Toggle: ${message}`);
+    }
+    async applyRecommendedScope(scope) {
+        await applyRecommendedBlock(scope);
+        await this.refresh(true);
+        if (scope.type === 'global') {
+            vscode.window.showInformationMessage('Global subagentStart was replaced with the recommended blocker config.');
+            return;
+        }
+        vscode.window.showInformationMessage(`${scope.name}: subagentStart was replaced with the recommended blocker config.`);
+    }
+}
+class SidebarNode extends vscode.TreeItem {
+    constructor(kind, options) {
+        super(options.label, options.collapsibleState ?? vscode.TreeItemCollapsibleState.None);
+        this.kind = kind;
+        this.description = options.description;
+        this.tooltip = options.tooltip;
+        this.contextValue = options.contextValue;
+        this.command = options.command;
+        this.workspaceState = options.workspaceState;
+    }
+}
+class SubagentSidebarProvider {
+    constructor() {
+        this.onDidChangeTreeDataEmitter = new vscode.EventEmitter();
+        this.onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
+        this.snapshot = buildErrorSnapshot(new Error('Status is not ready yet.'));
+    }
+    setSnapshot(snapshot) {
+        this.snapshot = snapshot;
+        this.onDidChangeTreeDataEmitter.fire();
+    }
+    getTreeItem(element) {
+        return element;
+    }
+    getChildren(element) {
+        if (!element) {
+            return Promise.resolve(this.getRootItems());
+        }
+        if (element.kind === 'workspaceRoot') {
+            return Promise.resolve(this.snapshot.workspaceStates.map((state) => createWorkspaceNode(state)));
+        }
+        return Promise.resolve([]);
+    }
+    getRootItems() {
+        const items = [
+            createSummaryNode(this.snapshot.aggregate, this.snapshot.workspaceStates.length),
+            createGlobalNode(this.snapshot.globalScope)
+        ];
+        if (this.snapshot.workspaceStates.length) {
+            items.push(createWorkspaceRootNode(this.snapshot.workspaceStates.length));
+        }
+        else {
+            items.push(createEmptyWorkspaceNode());
+        }
+        return items;
     }
 }
 async function buildSnapshot() {
@@ -716,6 +885,80 @@ async function pickWorkspaceState(workspaceStates) {
         placeHolder: 'Toggle the blocker in one workspace folder.'
     });
     return choice?.state;
+}
+function createSummaryNode(aggregate, workspaceFolderCount) {
+    return new SidebarNode('summary', {
+        label: 'Current Window',
+        description: formatStatusLine(aggregate.status),
+        tooltip: new vscode.MarkdownString([
+            '**Current Window**',
+            '',
+            `Status: ${formatStatusLine(aggregate.status)}`,
+            `Reason: ${aggregate.reason}`,
+            workspaceFolderCount > 0 ? `Workspace folders: ${workspaceFolderCount}` : 'Workspace folders: none'
+        ].join('\n'))
+    });
+}
+function createGlobalNode(globalScope) {
+    return new SidebarNode('global', {
+        label: 'Global',
+        description: formatStatusLine(globalScope.status),
+        tooltip: new vscode.MarkdownString([
+            '**Global Scope**',
+            '',
+            `Status: ${formatStatusLine(globalScope.status)}`,
+            `Reason: ${globalScope.reason}`,
+            `Path: \`${formatShortPath(globalScope.hooksJsonPath)}\``
+        ].join('\n')),
+        contextValue: globalScope.status === 'unknown' ? 'scope-global-unknown' : 'scope-global',
+        command: {
+            command: 'cursorSubagentToggle.openItemActions',
+            title: 'Open Global Actions',
+            arguments: [new SidebarNode('global', {
+                    label: 'Global',
+                    description: formatStatusLine(globalScope.status),
+                    workspaceState: undefined
+                })]
+        }
+    });
+}
+function createWorkspaceRootNode(workspaceFolderCount) {
+    return new SidebarNode('workspaceRoot', {
+        label: `Workspace Folders (${workspaceFolderCount})`,
+        tooltip: 'Expand to inspect and control each workspace folder.',
+        collapsibleState: vscode.TreeItemCollapsibleState.Expanded
+    });
+}
+function createWorkspaceNode(workspaceState) {
+    return new SidebarNode('workspace', {
+        label: workspaceState.folder.name,
+        description: formatStatusLine(workspaceState.status),
+        tooltip: new vscode.MarkdownString([
+            `**${workspaceState.folder.name}**`,
+            '',
+            `Effective: ${formatStatusLine(workspaceState.status)} ${workspaceState.reason}`,
+            `Local: ${formatStatusLine(workspaceState.local.status)} ${workspaceState.local.reason}`,
+            `Global: ${formatStatusLine(workspaceState.global.status)} ${workspaceState.global.reason}`,
+            `Path: \`${formatShortPath(workspaceState.local.hooksJsonPath)}\``
+        ].join('\n')),
+        contextValue: workspaceState.local.status === 'unknown' ? 'scope-workspace-unknown' : 'scope-workspace',
+        workspaceState,
+        command: {
+            command: 'cursorSubagentToggle.openItemActions',
+            title: 'Open Workspace Actions',
+            arguments: [new SidebarNode('workspace', {
+                    label: workspaceState.folder.name,
+                    description: formatStatusLine(workspaceState.status),
+                    workspaceState
+                })]
+        }
+    });
+}
+function createEmptyWorkspaceNode() {
+    return new SidebarNode('empty', {
+        label: 'No workspace folders',
+        tooltip: 'Open a folder or a multi-root workspace to see per-project subagent status.'
+    });
 }
 function buildTooltip(snapshot, activeWorkspaceState) {
     const lines = [];

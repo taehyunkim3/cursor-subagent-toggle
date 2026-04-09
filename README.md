@@ -6,7 +6,13 @@ Cursor에서 subagent 생성을 빠르게 켜고 끄기 위한 extension입니�
 - 전역 설정인 `~/.cursor/hooks.json`
 - multi-root workspace에서 각 폴더별 최종 적용 상태
 
-를 함께 스캔해서 Cursor 하단 status bar에 보여주고, 클릭 한 번으로 전역 또는 폴더 단위 blocker를 토글합니다.
+를 함께 스캔해서 Cursor 하단 status bar와 전용 사이드바에 보여주고, 클릭 한 번으로 전역 또는 폴더 단위 blocker를 토글합니다.
+
+## 사이드바
+
+- Activity Bar에 `Subagent` 아이콘이 추가됩니다
+- 그 안의 `Subagent Status` 뷰에서 현재 창 요약, global 상태, workspace 폴더별 상태를 바로 볼 수 있습니다
+- 각 항목을 클릭하면 액션 메뉴가 열리고, 우클릭 컨텍스트 메뉴에서도 토글과 `Apply Recommended Config`를 실행할 수 있습니다
 
 ## 동작 방식
 
@@ -70,6 +76,7 @@ exit 2
 workspace에 여러 폴더가 열려 있으면:
 
 - status bar는 활성 에디터가 속한 폴더의 최종 상태를 보여줍니다
+- 사이드바는 global 상태와 모든 폴더의 상태를 동시에 보여줍니다
 - hover tooltip에는 모든 폴더의 `local / global / effective` 상태를 함께 보여줍니다
 - 클릭 후 `Folder: choose another workspace folder`로 특정 폴더만 토글할 수 있습니다
 
