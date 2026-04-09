@@ -949,54 +949,66 @@ function renderSidebarHtml(webview, snapshot, language) {
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      padding: 16px;
+      padding: 10px;
       background: radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 15%, var(--bg)) 0%, var(--bg) 52%);
       color: var(--fg);
       font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
-    .stack { display: grid; gap: 14px; }
+    .stack { display: grid; gap: 10px; }
     .toolbar, .card {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 14px;
-      padding: 14px;
+      padding: 12px;
       backdrop-filter: blur(12px);
+      min-width: 0;
     }
     .toolbar {
       display: grid;
-      gap: 12px;
+      gap: 10px;
     }
     .toolbar-row {
       display: flex;
+      flex-wrap: wrap;
       gap: 10px;
       align-items: center;
       justify-content: space-between;
     }
+    .toolbar-row > * { min-width: 0; }
     .title {
-      font-size: 16px;
+      font-size: 15px;
       font-weight: 700;
+      overflow-wrap: anywhere;
     }
     .subtitle {
       color: var(--muted);
       font-size: 12px;
+      overflow-wrap: anywhere;
     }
     .status-pill {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 4px 8px;
+      padding: 3px 8px;
       border-radius: 999px;
       background: color-mix(in srgb, var(--accent) 16%, transparent);
       font-weight: 600;
+      max-width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     select, button {
       border: 1px solid var(--border);
       background: var(--vscode-input-background);
       color: var(--vscode-input-foreground);
       border-radius: 10px;
-      min-height: 34px;
+      min-height: 32px;
       padding: 0 12px;
       font: inherit;
+      max-width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
     button.primary {
       background: var(--accent);
@@ -1014,18 +1026,22 @@ function renderSidebarHtml(webview, snapshot, language) {
     }
     .card-header {
       display: flex;
+      flex-wrap: wrap;
       justify-content: space-between;
       gap: 10px;
       align-items: flex-start;
       margin-bottom: 12px;
     }
+    .card-header > * { min-width: 0; }
     .card-title {
       font-size: 14px;
       font-weight: 700;
+      overflow-wrap: anywhere;
     }
     .card-meta {
       color: var(--muted);
       font-size: 12px;
+      word-break: break-all;
     }
     .grid {
       display: grid;
@@ -1059,11 +1075,12 @@ function renderSidebarHtml(webview, snapshot, language) {
       display: grid;
       gap: 2px;
       flex: 1;
+      min-width: 0;
     }
     .switch {
       position: relative;
-      width: 50px;
-      height: 30px;
+      width: 40px;
+      height: 24px;
       flex: 0 0 auto;
     }
     .switch input {
@@ -1082,8 +1099,8 @@ function renderSidebarHtml(webview, snapshot, language) {
     .slider::before {
       content: "";
       position: absolute;
-      width: 22px;
-      height: 22px;
+      width: 16px;
+      height: 16px;
       left: 4px;
       top: 4px;
       background: white;
@@ -1094,7 +1111,7 @@ function renderSidebarHtml(webview, snapshot, language) {
       background: color-mix(in srgb, var(--off) 78%, white 12%);
     }
     .switch input:checked + .slider::before {
-      transform: translateX(20px);
+      transform: translateX(16px);
     }
     .hint {
       color: var(--muted);
@@ -1110,6 +1127,17 @@ function renderSidebarHtml(webview, snapshot, language) {
       gap: 8px;
       flex-wrap: wrap;
       margin-top: 10px;
+    }
+    @media (max-width: 340px) {
+      body { padding: 8px; }
+      .toolbar, .card { padding: 10px; border-radius: 12px; }
+      .toolbar-row { gap: 8px; }
+      .title { font-size: 14px; }
+      .status-pill { font-size: 11px; }
+      .switch-row { align-items: flex-start; }
+      .switch { margin-top: 2px; }
+      select, button { width: 100%; }
+      .actions button { width: 100%; }
     }
   </style>
 </head>
