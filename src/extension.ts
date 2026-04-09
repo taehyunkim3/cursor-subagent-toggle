@@ -1276,6 +1276,7 @@ function renderSidebarHtml(webview: vscode.Webview, snapshot: Snapshot, language
       max-width: 100%;
       white-space: normal;
       overflow-wrap: anywhere;
+      cursor: pointer;
     }
     button.primary {
       background: var(--accent);

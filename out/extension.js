@@ -1064,6 +1064,7 @@ function renderSidebarHtml(webview, snapshot, language) {
       max-width: 100%;
       white-space: normal;
       overflow-wrap: anywhere;
+      cursor: pointer;
     }
     button.primary {
       background: var(--accent);
