@@ -1,0 +1,47 @@
+{
+  "name": "cursor-subagent-toggle",
+  "displayName": "Cursor Subagent Toggle",
+  "description": "Toggle Cursor subagent hooks globally and per workspace folder, with status bar feedback for single-folder and multi-root workspaces.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:cursorSubagentToggle.showActions",
+    "onCommand:cursorSubagentToggle.toggleGlobal",
+    "onCommand:cursorSubagentToggle.toggleCurrentWorkspaceFolder",
+    "onCommand:cursorSubagentToggle.toggleWorkspaceFolder",
+    "onCommand:cursorSubagentToggle.refresh"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cursorSubagentToggle.showActions",
+        "title": "Cursor Subagent Toggle: Open Controls"
+      },
+      {
+        "command": "cursorSubagentToggle.toggleGlobal",
+        "title": "Cursor Subagent Toggle: Toggle Global Blocker"
+      },
+      {
+        "command": "cursorSubagentToggle.toggleCurrentWorkspaceFolder",
+        "title": "Cursor Subagent Toggle: Toggle Current Workspace Folder Blocker"
+      },
+      {
+        "command": "cursorSubagentToggle.toggleWorkspaceFolder",
+        "title": "Cursor Subagent Toggle: Toggle Workspace Folder Blocker"
+      },
+      {
+        "command": "cursorSubagentToggle.refresh",
+        "title": "Cursor Subagent Toggle: Refresh Status"
+      }
+    ]
+  }
+}

@@ -1,0 +1,107 @@
+# Cursor Subagent Toggle
+
+Cursor에서 subagent 생성을 빠르게 켜고 끄기 위한 extension입니다.
+
+- 현재 workspace 폴더의 `.cursor/hooks.json`
+- 전역 설정인 `~/.cursor/hooks.json`
+- multi-root workspace에서 각 폴더별 최종 적용 상태
+
+를 함께 스캔해서 Cursor 하단 status bar에 보여주고, 클릭 한 번으로 전역 또는 폴더 단위 blocker를 토글합니다.
+
+## 동작 방식
+
+이 extension은 `subagentStart` hook에 deny helper를 넣어서 subagent 생성을 차단합니다.
+
+프로젝트 스코프에서는 아래 command를 사용합니다.
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "subagentStart": [
+      {
+        "command": "bash .cursor/hooks/block-subagent.sh"
+      }
+    ]
+  }
+}
+```
+
+전역 스코프에서는 `~/.cursor/hooks.json` 기준으로 실행 경로가 달라지므로 아래 command를 사용합니다.
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "subagentStart": [
+      {
+        "command": "bash hooks/block-subagent.sh"
+      }
+    ]
+  }
+}
+```
+
+helper script는 각 스코프에 맞춰 자동 생성됩니다.
+
+```bash
+#!/bin/bash
+echo '{"decision": "deny", "permission": "deny"}'
+echo "Subagent creation is BLOCKED by Cursor Subagent Toggle." >&2
+exit 2
+```
+
+## 상태 계산
+
+- `🔴 OFF`: managed blocker가 확실하게 적용된 상태
+- `🟢 ON`: blocking hook이 없는 상태
+- `🟡 MIXED`: multi-root workspace에서 폴더마다 최종 상태가 다른 상태
+- `⚪ CHECK`: custom `subagentStart` hook이 있어서 안전하게 ON/OFF를 단정할 수 없는 상태
+- `🟠 ERROR`: `hooks.json`이 깨졌거나 managed script가 빠진 상태
+
+최종 판정 규칙은 다음과 같습니다.
+
+- global blocker가 켜져 있으면 모든 workspace folder가 `OFF`
+- global blocker가 꺼져 있어도, 특정 폴더의 `.cursor/hooks.json`에 blocker가 있으면 그 폴더만 `OFF`
+- multi-root workspace에서는 각 폴더의 `local + global`을 합쳐 최종 상태를 표시
+
+## multi-root workspace 표시
+
+workspace에 여러 폴더가 열려 있으면:
+
+- status bar는 활성 에디터가 속한 폴더의 최종 상태를 보여줍니다
+- hover tooltip에는 모든 폴더의 `local / global / effective` 상태를 함께 보여줍니다
+- 클릭 후 `Folder: choose another workspace folder`로 특정 폴더만 토글할 수 있습니다
+
+예시:
+
+- `folder-a`: local `ON`, global `OFF` => effective `OFF`
+- `folder-b`: local `OFF`, global `ON` => effective `OFF`
+- `folder-c`: local `ON`, global `ON` => effective `ON`
+
+이 경우 status bar summary는 상황에 따라 `OFF` 또는 `MIXED`로 보이고, tooltip에 각 폴더가 개별적으로 표시됩니다.
+
+## 구현 메모
+
+- managed blocker는 항상 `subagentStart` 배열의 맨 앞에 넣습니다
+- 기존 다른 hook들은 그대로 보존합니다
+- custom `subagentStart` hook이 있으면 실제 deny/allow를 안전하게 추론할 수 없어서 `CHECK`로 표시합니다
+
+## 설치 및 실행
+
+이 저장소는 build step 없이 plain JavaScript로 작성되어 있습니다.
+
+1. Cursor 또는 VS Code에서 이 폴더를 엽니다.
+2. Extension Development Host로 실행하거나, 필요하면 VSIX로 패키징합니다.
+3. Command Palette에서 아래 명령을 사용할 수 있습니다.
+
+- `Cursor Subagent Toggle: Open Controls`
+- `Cursor Subagent Toggle: Toggle Global Blocker`
+- `Cursor Subagent Toggle: Toggle Current Workspace Folder Blocker`
+- `Cursor Subagent Toggle: Toggle Workspace Folder Blocker`
+- `Cursor Subagent Toggle: Refresh Status`
+
+## 참고
+
+- [Cursor Hooks docs](https://cursor.com/docs/hooks)
+- [Cursor forum: global hooks cwd clarification](https://forum.cursor.com/t/best-way-to-disable-agent-shell-commands-project-vs-user-level-hook-behavior/111048)
