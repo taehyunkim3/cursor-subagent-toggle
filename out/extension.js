@@ -72,7 +72,8 @@ const STRINGS = {
         noWorkspaceFolders: 'No workspace folders are open in this window.',
         openControls: 'Open more actions',
         refresh: 'Refresh',
-        blockerToggle: 'Subagent Enabled',
+        blockerToggleGlobal: 'Global subagent enabled',
+        blockerToggleLocal: 'Local subagent enabled',
         effectiveStatus: 'Effective status',
         localStatus: 'Local status',
         globalStatus: 'Global status',
@@ -90,8 +91,10 @@ const STRINGS = {
         customDetected: 'Custom subagentStart hooks were detected.',
         recommended: 'Apply Recommended Config',
         recommendedHelp: 'This replaces only hooks.subagentStart with the extension-managed blocker.',
+        unknownSwitchHelp: 'Custom hooks exist, so this switch may not reflect the final behavior.',
         blockedSwitchHelp: 'Switch off to block subagent creation in this scope.',
         enabledSwitchHelp: 'Switch on to allow subagent creation in this scope.',
+        overriddenByGlobal: 'Global blocker is ON, so final status remains blocked in this folder.',
         globalNotification: 'Global subagent status',
         recommendedGlobalDone: 'Global subagentStart was replaced with the recommended blocker config.',
         recommendedWorkspaceDone: '{name}: subagentStart was replaced with the recommended blocker config.',
@@ -123,7 +126,8 @@ const STRINGS = {
         noWorkspaceFolders: '이 창에는 열린 workspace folder가 없습니다.',
         openControls: '추가 액션 열기',
         refresh: '새로고침',
-        blockerToggle: 'Subagent 활성화',
+        blockerToggleGlobal: '전역 subagent 활성화',
+        blockerToggleLocal: '로컬 subagent 활성화',
         effectiveStatus: '최종 상태',
         localStatus: '로컬 상태',
         globalStatus: '전역 상태',
@@ -141,8 +145,10 @@ const STRINGS = {
         customDetected: '커스텀 subagentStart hook이 감지되었습니다.',
         recommended: '권장 설정 적용',
         recommendedHelp: 'hooks.subagentStart만 extension이 관리하는 blocker 형식으로 교체합니다.',
+        unknownSwitchHelp: '커스텀 hook이 있어 이 스위치가 최종 동작을 정확히 반영하지 않을 수 있습니다.',
         blockedSwitchHelp: '스위치를 끄면 이 범위에서 subagent 생성이 차단됩니다.',
         enabledSwitchHelp: '스위치를 켜면 이 범위에서 subagent 생성이 허용됩니다.',
+        overriddenByGlobal: '전역 차단이 켜져 있어서 이 폴더의 최종 상태는 비활성으로 유지됩니다.',
         globalNotification: '전역 subagent 상태',
         recommendedGlobalDone: '전역 subagentStart를 권장 blocker 설정으로 교체했습니다.',
         recommendedWorkspaceDone: '{name}: subagentStart를 권장 blocker 설정으로 교체했습니다.',
@@ -1269,7 +1275,17 @@ function renderScopeCard(scope, options) {
     const strings = STRINGS[options.language];
     const localMeta = STATUS_META[scope.status];
     const effectiveMeta = STATUS_META[options.effectiveStatus];
-    const isChecked = options.effectiveStatus === 'enabled';
+    const isChecked = scope.status === 'enabled';
+    const toggleTitle = options.folderUri ? strings.blockerToggleLocal : strings.blockerToggleGlobal;
+    const switchHint = scope.status === 'unknown'
+        ? strings.unknownSwitchHelp
+        : isChecked
+            ? strings.blockedSwitchHelp
+            : strings.enabledSwitchHelp;
+    const isOverriddenByGlobal = Boolean(options.folderUri
+        && options.globalStatus === 'blocked'
+        && options.effectiveStatus === 'blocked'
+        && scope.status !== 'blocked');
     const toggleAction = options.folderUri ? 'toggle-workspace' : 'toggle-global';
     const recommendedAction = options.folderUri ? 'recommended-workspace' : 'recommended-global';
     return `<article class="card">
@@ -1283,14 +1299,18 @@ function renderScopeCard(scope, options) {
 
     <div class="switch-row">
       <div class="switch-copy">
-        <strong>${escapeHtml(strings.blockerToggle)}</strong>
-        <span class="hint">${escapeHtml(isChecked ? strings.blockedSwitchHelp : strings.enabledSwitchHelp)}</span>
+        <strong>${escapeHtml(toggleTitle)}</strong>
+        <span class="hint">${escapeHtml(switchHint)}</span>
       </div>
       <label class="switch">
         <input type="checkbox" data-action="${toggleAction}"${options.folderUri ? ` data-folder-uri="${escapeHtmlAttribute(options.folderUri)}"` : ''}${isChecked ? ' checked' : ''}>
         <span class="slider"></span>
       </label>
     </div>
+
+    ${isOverriddenByGlobal ? `<div class="warning">
+      <div class="hint">${escapeHtml(strings.overriddenByGlobal)}</div>
+    </div>` : ''}
 
     <div class="grid">
       <div class="row">
