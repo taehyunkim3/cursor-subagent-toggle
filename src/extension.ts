@@ -105,9 +105,9 @@ type SidebarMessage =
   | { type: 'refresh' }
   | { type: 'showActions' }
   | { type: 'setLanguage'; language: UiLanguage }
-  | { type: 'toggleGlobal' }
+  | { type: 'toggleGlobal'; desiredEnabled?: boolean }
   | { type: 'applyRecommendedGlobal' }
-  | { type: 'toggleWorkspace'; folderUri: string }
+  | { type: 'toggleWorkspace'; folderUri: string; desiredEnabled?: boolean }
   | { type: 'applyRecommendedWorkspace'; folderUri: string };
 
 const STATUS_META: Record<StatusKind, StatusMeta> = {
@@ -131,7 +131,7 @@ const STRINGS: Record<UiLanguage, Record<string, string>> = {
     noWorkspaceFolders: 'No workspace folders are open in this window.',
     openControls: 'Open more actions',
     refresh: 'Refresh',
-    blockerToggle: 'Block subagent',
+    blockerToggle: 'Subagent Enabled',
     effectiveStatus: 'Effective status',
     localStatus: 'Local status',
     globalStatus: 'Global status',
@@ -149,8 +149,8 @@ const STRINGS: Record<UiLanguage, Record<string, string>> = {
     customDetected: 'Custom subagentStart hooks were detected.',
     recommended: 'Apply Recommended Config',
     recommendedHelp: 'This replaces only hooks.subagentStart with the extension-managed blocker.',
-    blockedSwitchHelp: 'Switch on to force-disable subagent creation in this scope.',
-    enabledSwitchHelp: 'Switch off to allow subagent creation in this scope.',
+    blockedSwitchHelp: 'Switch off to block subagent creation in this scope.',
+    enabledSwitchHelp: 'Switch on to allow subagent creation in this scope.',
     globalNotification: 'Global subagent status',
     recommendedGlobalDone: 'Global subagentStart was replaced with the recommended blocker config.',
     recommendedWorkspaceDone: '{name}: subagentStart was replaced with the recommended blocker config.',
@@ -182,7 +182,7 @@ const STRINGS: Record<UiLanguage, Record<string, string>> = {
     noWorkspaceFolders: '이 창에는 열린 workspace folder가 없습니다.',
     openControls: '추가 액션 열기',
     refresh: '새로고침',
-    blockerToggle: 'Subagent 차단',
+    blockerToggle: 'Subagent 활성화',
     effectiveStatus: '최종 상태',
     localStatus: '로컬 상태',
     globalStatus: '전역 상태',
@@ -200,8 +200,8 @@ const STRINGS: Record<UiLanguage, Record<string, string>> = {
     customDetected: '커스텀 subagentStart hook이 감지되었습니다.',
     recommended: '권장 설정 적용',
     recommendedHelp: 'hooks.subagentStart만 extension이 관리하는 blocker 형식으로 교체합니다.',
-    blockedSwitchHelp: '스위치를 켜면 이 범위에서 subagent 생성이 강제로 차단됩니다.',
-    enabledSwitchHelp: '스위치를 끄면 이 범위에서 subagent 생성이 허용됩니다.',
+    blockedSwitchHelp: '스위치를 끄면 이 범위에서 subagent 생성이 차단됩니다.',
+    enabledSwitchHelp: '스위치를 켜면 이 범위에서 subagent 생성이 허용됩니다.',
     globalNotification: '전역 subagent 상태',
     recommendedGlobalDone: '전역 subagentStart를 권장 blocker 설정으로 교체했습니다.',
     recommendedWorkspaceDone: '{name}: subagentStart를 권장 blocker 설정으로 교체했습니다.',
@@ -377,7 +377,11 @@ class SubagentController implements vscode.Disposable {
         await this.setLanguage(message.language);
         break;
       case 'toggleGlobal':
-        await this.toggleGlobal();
+        if (typeof message.desiredEnabled === 'boolean') {
+          await this.setGlobalEnabled(message.desiredEnabled);
+        } else {
+          await this.toggleGlobal();
+        }
         break;
       case 'applyRecommendedGlobal':
         await this.applyRecommendedGlobal();
@@ -385,7 +389,11 @@ class SubagentController implements vscode.Disposable {
       case 'toggleWorkspace': {
         const workspaceState = this.findWorkspaceState(message.folderUri);
         if (workspaceState) {
-          await this.toggleWorkspaceState(workspaceState);
+          if (typeof message.desiredEnabled === 'boolean') {
+            await this.setWorkspaceEnabled(workspaceState, message.desiredEnabled);
+          } else {
+            await this.toggleWorkspaceState(workspaceState);
+          }
         }
         break;
       }
@@ -535,6 +543,27 @@ class SubagentController implements vscode.Disposable {
     vscode.window.showInformationMessage(`${strings.globalNotification}: ${meta.icon} ${meta.label}`);
   }
 
+  private async setGlobalEnabled(desiredEnabled: boolean): Promise<void> {
+    const global = this.getSnapshot().globalScope;
+
+    if (global.status === 'unknown') {
+      if (desiredEnabled) {
+        await setManagedBlock(global, false);
+      } else {
+        const confirmed = await confirmRecommendedOverwrite(global, this.getLanguage());
+        if (!confirmed) {
+          await this.refresh();
+          return;
+        }
+        await applyRecommendedBlock(global);
+      }
+    } else {
+      await setManagedBlock(global, !desiredEnabled);
+    }
+
+    await this.refresh(true);
+  }
+
   private async toggleCurrentWorkspaceFolder(): Promise<void> {
     await this.refresh();
     const activeWorkspaceState = getActiveWorkspaceState(this.getSnapshot().workspaceStates);
@@ -584,6 +613,25 @@ class SubagentController implements vscode.Disposable {
 
     const meta = STATUS_META[updatedState.status] ?? STATUS_META.unknown;
     vscode.window.showInformationMessage(`${updatedState.folder.name}: ${meta.icon} ${meta.label}`);
+  }
+
+  private async setWorkspaceEnabled(workspaceState: WorkspaceState, desiredEnabled: boolean): Promise<void> {
+    if (workspaceState.local.status === 'unknown') {
+      if (desiredEnabled) {
+        await setManagedBlock(workspaceState.local, false);
+      } else {
+        const confirmed = await confirmRecommendedOverwrite(workspaceState.local, this.getLanguage());
+        if (!confirmed) {
+          await this.refresh();
+          return;
+        }
+        await applyRecommendedBlock(workspaceState.local);
+      }
+    } else {
+      await setManagedBlock(workspaceState.local, !desiredEnabled);
+    }
+
+    await this.refresh(true);
   }
 
   private async applyRecommendedGlobal(): Promise<void> {
@@ -1407,10 +1455,17 @@ function renderSidebarHtml(webview: vscode.Webview, snapshot: Snapshot, language
       button.addEventListener('click', () => vscode.postMessage({ type: 'showActions' }));
     });
     document.querySelectorAll('[data-action="toggle-global"]').forEach((input) => {
-      input.addEventListener('change', () => vscode.postMessage({ type: 'toggleGlobal' }));
+      input.addEventListener('change', (event) => vscode.postMessage({
+        type: 'toggleGlobal',
+        desiredEnabled: event.target.checked
+      }));
     });
     document.querySelectorAll('[data-action="toggle-workspace"]').forEach((input) => {
-      input.addEventListener('change', () => vscode.postMessage({ type: 'toggleWorkspace', folderUri: input.dataset.folderUri }));
+      input.addEventListener('change', (event) => vscode.postMessage({
+        type: 'toggleWorkspace',
+        folderUri: input.dataset.folderUri,
+        desiredEnabled: event.target.checked
+      }));
     });
     document.querySelectorAll('[data-action="recommended-global"]').forEach((button) => {
       button.addEventListener('click', () => vscode.postMessage({ type: 'applyRecommendedGlobal' }));
@@ -1434,7 +1489,7 @@ function renderScopeCard(scope: ScopeState, options: {
   const strings = STRINGS[options.language];
   const localMeta = STATUS_META[scope.status];
   const effectiveMeta = STATUS_META[options.effectiveStatus];
-  const isChecked = scope.status === 'blocked';
+  const isChecked = options.effectiveStatus === 'enabled';
   const toggleAction = options.folderUri ? 'toggle-workspace' : 'toggle-global';
   const recommendedAction = options.folderUri ? 'recommended-workspace' : 'recommended-global';
 
