@@ -128,7 +128,6 @@ const STRINGS: Record<UiLanguage, Record<string, string>> = {
     currentWindowStatus: 'Current status',
     globalTitle: 'Global',
     workspaceTitle: 'Workspace Folders',
-    workspaceDividerLabel: 'Workspace',
     noWorkspaceFolders: 'No workspace folders are open in this window.',
     openControls: 'Open more actions',
     refresh: 'Refresh',
@@ -183,7 +182,6 @@ const STRINGS: Record<UiLanguage, Record<string, string>> = {
     currentWindowStatus: '현재 상태',
     globalTitle: '전역',
     workspaceTitle: '워크스페이스 폴더',
-    workspaceDividerLabel: 'Workspace',
     noWorkspaceFolders: '이 창에는 열린 workspace folder가 없습니다.',
     openControls: '추가 액션 열기',
     refresh: '새로고침',
@@ -1306,14 +1304,6 @@ function renderSidebarHtml(webview: vscode.Webview, snapshot: Snapshot, language
       );
       margin: 2px 0;
     }
-    .section-divider-label {
-      font-size: 11px;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      text-align: center;
-      margin: -2px 0 0;
-    }
     .card-header {
       display: flex;
       flex-wrap: wrap;
@@ -1463,7 +1453,6 @@ function renderSidebarHtml(webview: vscode.Webview, snapshot: Snapshot, language
     </section>
 
     <hr class="section-divider" />
-    <div class="section-divider-label">${escapeHtml(strings.workspaceDividerLabel)}</div>
 
     <section class="cards">
       <div class="section-title">${escapeHtml(strings.workspaceTitle)}</div>
