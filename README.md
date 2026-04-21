@@ -2,12 +2,13 @@
 
 ## English
 
-Cursor Subagent Toggle controls whether Cursor can create subagents by managing `subagentStart` hooks in:
+Cursor Subagent Toggle controls whether Cursor can create subagents by managing:
 
-- Local workspace folder: `.cursor/hooks.json`
-- Global user scope: `~/.cursor/hooks.json`
+- Local workspace hook config: `.cursor/hooks.json`
+- Local workspace managed rule: `.cursor/rules/cursor-subagent-toggle.mdc`
+- Global user hook config: `~/.cursor/hooks.json`
 
-The extension shows both scopes together in a dedicated sidebar and in the status bar, including support for multi-root workspaces.
+The extension shows global and workspace states together in a dedicated sidebar and in the status bar, including support for multi-root workspaces.
 
 ### Main Features
 
@@ -16,13 +17,19 @@ The extension shows both scopes together in a dedicated sidebar and in the statu
 - Live final-status summary in the status bar
 - Language selector (`English / 한국어`)
 - Safe handling for custom `subagentStart` hooks (`CHECK` state)
-- One-click `Apply Recommended Config` to replace only `hooks.subagentStart`
+- One-click `Apply Recommended Config` to replace only `hooks.subagentStart` and recreate extension-managed guard files
+- Managed project rule injection for stronger prompt-context guidance when subagents are disabled
 
 ### Toggle Semantics
 
-- Toggle `ON` means subagent is enabled in that local scope.
-- Toggle `OFF` means managed blocker is enabled in that local scope.
-- Effective final state still follows Cursor scope priority (global can override local).
+- Toggle `ON` means subagent creation is allowed in that local scope.
+- Toggle `OFF` means the managed blocker is enabled in that local scope.
+- Workspace `OFF` writes both the deny hook and a separate managed project rule.
+- Workspace `ON` removes the managed hook and deletes only `.cursor/rules/cursor-subagent-toggle.mdc` when it still matches the extension-managed content.
+- Existing user-created `.cursor/rules/*.mdc` files are not modified, merged, or deleted.
+- Global `OFF` writes the global deny hook and injects the managed project rule into currently open workspace folders.
+- Global `ON` removes the global deny hook and removes the managed project rule only from workspace folders that are not locally `OFF`.
+- Effective final state still follows Cursor scope priority: global blocking can override a local workspace.
 
 ### Status Model
 
@@ -32,11 +39,11 @@ The extension shows both scopes together in a dedicated sidebar and in the statu
 - `⚪ CHECK`: Custom `subagentStart` exists, so safe ON/OFF inference is not possible.
 - `🟠 ERROR`: Invalid `hooks.json` or missing managed script.
 
-### Priority Rules
+The sidebar also shows the managed project rule state:
 
-- If global scope is `OFF`, effective state is `OFF` for all folders.
-- If global scope is `ON`, each folder follows its own local state.
-- Multi-root view shows global, local, and effective status per folder.
+- `Managed`: The extension-managed project rule exists and matches the expected content.
+- `Missing`: The managed project rule is missing while the effective state is blocked.
+- `Modified - protected`: The managed project rule file exists but no longer matches the extension content. The extension does not delete modified rule content.
 
 ### Managed Hook Shape
 
@@ -66,12 +73,29 @@ Global blocker command:
 }
 ```
 
+### Managed Project Rule
+
+When a workspace needs prompt-context protection, the extension creates only this file:
+
+```text
+.cursor/rules/cursor-subagent-toggle.mdc
+```
+
+The rule starts with:
+
+```md
+# [DO NOT CALL SUBAGENTS]
+```
+
+It also states that this rule is a higher-priority safety override for the workspace and that conflicting Cursor rules, project rules, user rules, instructions, or prompts must yield to the no-subagent rule.
+
 ## 한국어
 
-Cursor Subagent Toggle은 아래 두 범위의 `subagentStart` hook을 관리해서, Cursor의 subagent 생성 허용 여부를 제어합니다.
+Cursor Subagent Toggle은 아래 항목을 관리해서 Cursor의 subagent 생성 허용 여부를 제어합니다.
 
-- 로컬 워크스페이스 폴더: `.cursor/hooks.json`
-- 전역 사용자 범위: `~/.cursor/hooks.json`
+- 로컬 워크스페이스 hook 설정: `.cursor/hooks.json`
+- 로컬 워크스페이스 관리 rule: `.cursor/rules/cursor-subagent-toggle.mdc`
+- 전역 사용자 hook 설정: `~/.cursor/hooks.json`
 
 확장은 전용 사이드바와 status bar에서 전역/로컬 상태를 함께 보여주며, 멀티 루트 워크스페이스도 지원합니다.
 
@@ -82,13 +106,19 @@ Cursor Subagent Toggle은 아래 두 범위의 `subagentStart` hook을 관리해
 - status bar에 최종 상태 실시간 요약 표시
 - 언어 선택기 (`English / 한국어`)
 - 커스텀 `subagentStart`에 대한 안전 모드(`CHECK` 상태)
-- `Apply Recommended Config` 버튼으로 `hooks.subagentStart`만 권장 설정으로 교체
+- `Apply Recommended Config` 버튼으로 `hooks.subagentStart`만 교체하고 extension 관리 guard 파일 재생성
+- subagent 비활성화 시 더 강한 prompt-context 지시를 위한 managed project rule 주입
 
 ### 토글 의미
 
-- 토글 `ON`: 해당 로컬 범위에서 subagent 활성화
+- 토글 `ON`: 해당 로컬 범위에서 subagent 생성 허용
 - 토글 `OFF`: 해당 로컬 범위에서 managed blocker 활성화
-- 최종 상태는 Cursor 범위 우선순위(전역 우선)의 영향을 받음
+- 워크스페이스 `OFF`: deny hook과 별도 managed project rule을 함께 생성
+- 워크스페이스 `ON`: managed hook을 제거하고, `.cursor/rules/cursor-subagent-toggle.mdc`가 extension 관리 내용과 일치할 때만 삭제
+- 사용자가 만든 기존 `.cursor/rules/*.mdc` 파일은 수정, 병합, 삭제하지 않음
+- 전역 `OFF`: 전역 deny hook을 적용하고 현재 열려 있는 workspace folder들에 managed project rule 주입
+- 전역 `ON`: 전역 deny hook을 제거하고, 로컬이 `OFF`가 아닌 workspace folder에서만 managed project rule 삭제
+- 최종 상태는 Cursor 범위 우선순위의 영향을 받으며, 전역 차단이 로컬 상태를 override할 수 있음
 
 ### 상태 모델
 
@@ -98,11 +128,11 @@ Cursor Subagent Toggle은 아래 두 범위의 `subagentStart` hook을 관리해
 - `⚪ CHECK`: 커스텀 `subagentStart`가 있어 ON/OFF를 안전하게 단정할 수 없음
 - `🟠 ERROR`: `hooks.json` 파싱 오류 또는 managed 스크립트 누락
 
-### 우선순위 규칙
+사이드바는 managed project rule 상태도 함께 보여줍니다.
 
-- 전역이 `OFF`면 모든 폴더의 최종 상태는 `OFF`
-- 전역이 `ON`이면 각 폴더는 로컬 상태를 따름
-- 멀티 루트에서는 폴더별 global/local/effective 상태를 함께 표시
+- `관리됨`: extension이 관리하는 project rule이 있고 예상 내용과 일치함
+- `없음`: 최종 상태가 차단인데 managed project rule이 없음
+- `수정됨 - 보호`: managed project rule 파일이 있지만 extension 내용과 다름. extension은 수정된 rule 내용을 삭제하지 않음
 
 ### Managed Hook 형태
 
@@ -131,3 +161,19 @@ Cursor Subagent Toggle은 아래 두 범위의 `subagentStart` hook을 관리해
   }
 }
 ```
+
+### Managed Project Rule
+
+워크스페이스에 prompt-context 보호가 필요할 때 extension은 아래 파일 하나만 생성합니다.
+
+```text
+.cursor/rules/cursor-subagent-toggle.mdc
+```
+
+rule은 아래 문구로 시작합니다.
+
+```md
+# [DO NOT CALL SUBAGENTS]
+```
+
+또한 이 rule이 워크스페이스의 higher-priority safety override이며, 충돌하는 Cursor rule, project rule, user rule, instruction, prompt보다 no-subagent rule을 우선해야 한다고 명시합니다.

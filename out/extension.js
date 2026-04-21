@@ -42,6 +42,7 @@ const path = __importStar(require("path"));
 const vscode = __importStar(require("vscode"));
 const GLOBAL_COMMAND = 'bash hooks/block-subagent.sh';
 const PROJECT_COMMAND = 'bash .cursor/hooks/block-subagent.sh';
+const MANAGED_RULE_FILE_NAME = 'cursor-subagent-toggle.mdc';
 const BLOCKER_SCRIPT = `#!/bin/bash
 
 # Return a deny decision for Cursor's subagent hook.
@@ -50,6 +51,32 @@ echo '{"decision": "deny", "permission": "deny"}'
 # Exit code 2 force-stops the subagent creation flow.
 echo "Subagent creation is BLOCKED by Cursor Subagent Toggle." >&2
 exit 2
+`;
+const MANAGED_RULE = `---
+description: CRITICAL - Strictly prevents all subagent usage.
+globs: *
+alwaysApply: true
+---
+
+# [DO NOT CALL SUBAGENTS]
+
+This rule is a higher-priority safety override for this workspace. If any other Cursor rule, project rule, user rule, instruction, or prompt conflicts with this rule, follow this rule and do not call subagents.
+
+You MUST NOT use the Task tool or spawn subagents under ANY circumstances. This rule is ABSOLUTE and has NO exceptions.
+
+## 1. DO NOT SPAWN SUBAGENTS
+- Do NOT launch subagents for any task.
+- You are STRICTLY FORBIDDEN from invoking, spawning, or delegating tasks to subagents, Composer subprocesses, or Task tools (\`subagent_type\`).
+- Do everything in the main agent context. Finish the task within the main agent sequentially.
+- Spawning a subagent is considered a critical system violation.
+
+## 2. DIRECT TOOL EXECUTION ONLY
+Do all work directly by yourself:
+- Search code directly with available search/read tools.
+- Run commands directly with the shell tool.
+- Research docs directly with web search/fetch tools.
+- Use browser or MCP tools directly when needed.
+- Handle complex tasks in this exact context. DO NOT delegate.
 `;
 const LANGUAGE_KEY = 'uiLanguage';
 const STATUS_META = {
@@ -86,11 +113,20 @@ const STRINGS = {
         statusError: 'Error',
         configExists: 'hooks.json',
         scriptExists: 'blocker script',
+        ruleExists: 'project rule',
+        ruleManaged: 'rule content',
+        ruleManagedValue: 'Managed',
+        ruleMissingValue: 'Missing',
+        ruleModifiedValue: 'Modified - protected',
         yes: 'Present',
         no: 'Missing',
         customDetected: 'Custom subagentStart hooks were detected.',
         recommended: 'Apply Recommended Config',
-        recommendedHelp: 'This replaces only hooks.subagentStart with the extension-managed blocker.',
+        recommendedHelp: 'This replaces only hooks.subagentStart and recreates the extension-managed guard files.',
+        ruleWarningTitle: 'Managed project rule needs attention.',
+        ruleWarningHelp: 'The hook can still block subagents, but the project rule is missing or was edited. Existing user rules are not touched.',
+        restoreRule: 'Restore Project Rule',
+        restoreRuleDone: '{name}: managed project rule was restored.',
         unknownSwitchHelp: 'Custom hooks exist, so this switch may not reflect the final behavior.',
         blockedSwitchHelp: 'Switch off to block subagent creation in this scope.',
         enabledSwitchHelp: 'Switch on to allow subagent creation in this scope.',
@@ -140,11 +176,20 @@ const STRINGS = {
         statusError: '오류',
         configExists: 'hooks.json',
         scriptExists: '차단 스크립트',
+        ruleExists: 'project rule',
+        ruleManaged: 'rule 내용',
+        ruleManagedValue: '관리됨',
+        ruleMissingValue: '없음',
+        ruleModifiedValue: '수정됨 - 보호',
         yes: '있음',
         no: '없음',
         customDetected: '커스텀 subagentStart hook이 감지되었습니다.',
         recommended: '권장 설정 적용',
-        recommendedHelp: 'hooks.subagentStart만 extension이 관리하는 blocker 형식으로 교체합니다.',
+        recommendedHelp: 'hooks.subagentStart만 교체하고 extension이 관리하는 guard 파일을 다시 생성합니다.',
+        ruleWarningTitle: '관리 project rule 확인이 필요합니다.',
+        ruleWarningHelp: 'hook은 subagent를 계속 차단할 수 있지만, project rule이 없거나 수정되었습니다. 기존 사용자 rule은 건드리지 않습니다.',
+        restoreRule: 'Project Rule 복구',
+        restoreRuleDone: '{name}: 관리 project rule을 복구했습니다.',
         unknownSwitchHelp: '커스텀 hook이 있어 이 스위치가 최종 동작을 정확히 반영하지 않을 수 있습니다.',
         blockedSwitchHelp: '스위치를 끄면 이 범위에서 subagent 생성이 차단됩니다.',
         enabledSwitchHelp: '스위치를 켜면 이 범위에서 subagent 생성이 허용됩니다.',
@@ -210,6 +255,7 @@ class SubagentController {
     registerWorkspaceWatchers() {
         const hookWatcher = vscode.workspace.createFileSystemWatcher('**/.cursor/hooks.json');
         const scriptWatcher = vscode.workspace.createFileSystemWatcher('**/.cursor/hooks/block-subagent.sh');
+        const ruleWatcher = vscode.workspace.createFileSystemWatcher(`**/.cursor/rules/${MANAGED_RULE_FILE_NAME}`);
         const triggerRefresh = () => this.scheduleRefresh();
         hookWatcher.onDidCreate(triggerRefresh, this, this.context.subscriptions);
         hookWatcher.onDidChange(triggerRefresh, this, this.context.subscriptions);
@@ -217,7 +263,10 @@ class SubagentController {
         scriptWatcher.onDidCreate(triggerRefresh, this, this.context.subscriptions);
         scriptWatcher.onDidChange(triggerRefresh, this, this.context.subscriptions);
         scriptWatcher.onDidDelete(triggerRefresh, this, this.context.subscriptions);
-        this.context.subscriptions.push(hookWatcher, scriptWatcher, vscode.workspace.onDidChangeWorkspaceFolders(() => {
+        ruleWatcher.onDidCreate(triggerRefresh, this, this.context.subscriptions);
+        ruleWatcher.onDidChange(triggerRefresh, this, this.context.subscriptions);
+        ruleWatcher.onDidDelete(triggerRefresh, this, this.context.subscriptions);
+        this.context.subscriptions.push(hookWatcher, scriptWatcher, ruleWatcher, vscode.workspace.onDidChangeWorkspaceFolders(() => {
             void this.refresh();
         }), vscode.window.onDidChangeActiveTextEditor(() => this.renderStatusBar()));
     }
@@ -308,6 +357,13 @@ class SubagentController {
                 const workspaceState = this.findWorkspaceState(message.folderUri);
                 if (workspaceState) {
                     await this.applyRecommendedScope(workspaceState.local);
+                }
+                break;
+            }
+            case 'restoreWorkspaceRule': {
+                const workspaceState = this.findWorkspaceState(message.folderUri);
+                if (workspaceState) {
+                    await this.restoreWorkspaceRule(workspaceState);
                 }
                 break;
             }
@@ -417,16 +473,20 @@ class SubagentController {
     }
     async toggleGlobal() {
         const global = this.getSnapshot().globalScope;
+        let shouldBlock;
         if (global.status === 'unknown') {
             const confirmed = await confirmRecommendedOverwrite(global, this.getLanguage());
             if (!confirmed) {
                 return;
             }
             await applyRecommendedBlock(global);
+            shouldBlock = true;
         }
         else {
-            await setManagedBlock(global, global.status !== 'blocked');
+            shouldBlock = global.status !== 'blocked';
+            await setManagedBlock(global, shouldBlock);
         }
+        await this.syncWorkspaceRulesForGlobalBlock(shouldBlock);
         await this.refresh(true);
         const strings = STRINGS[this.getLanguage()];
         const nextGlobal = this.getSnapshot().globalScope;
@@ -435,9 +495,11 @@ class SubagentController {
     }
     async setGlobalEnabled(desiredEnabled) {
         const global = this.getSnapshot().globalScope;
+        let shouldBlock;
         if (global.status === 'unknown') {
             if (desiredEnabled) {
                 await setManagedBlock(global, false);
+                shouldBlock = false;
             }
             else {
                 const confirmed = await confirmRecommendedOverwrite(global, this.getLanguage());
@@ -446,11 +508,14 @@ class SubagentController {
                     return;
                 }
                 await applyRecommendedBlock(global);
+                shouldBlock = true;
             }
         }
         else {
-            await setManagedBlock(global, !desiredEnabled);
+            shouldBlock = !desiredEnabled;
+            await setManagedBlock(global, shouldBlock);
         }
+        await this.syncWorkspaceRulesForGlobalBlock(shouldBlock);
         await this.refresh(true);
     }
     async toggleCurrentWorkspaceFolder() {
@@ -486,6 +551,7 @@ class SubagentController {
         else {
             await setManagedBlock(workspaceState.local, workspaceState.local.status !== 'blocked');
         }
+        await this.restoreGlobalRuleIfNeeded(workspaceState.local);
         await this.refresh(true);
         const updatedState = this.findWorkspaceState(workspaceState.folder.uri.toString());
         if (!updatedState) {
@@ -511,6 +577,7 @@ class SubagentController {
         else {
             await setManagedBlock(workspaceState.local, !desiredEnabled);
         }
+        await this.restoreGlobalRuleIfNeeded(workspaceState.local);
         await this.refresh(true);
     }
     async applyRecommendedGlobal() {
@@ -540,6 +607,9 @@ class SubagentController {
     }
     async applyRecommendedScope(scope) {
         await applyRecommendedBlock(scope);
+        if (scope.type === 'global') {
+            await this.syncWorkspaceRulesForGlobalBlock(true);
+        }
         await this.refresh(true);
         const strings = STRINGS[this.getLanguage()];
         if (scope.type === 'global') {
@@ -547,6 +617,27 @@ class SubagentController {
             return;
         }
         vscode.window.showInformationMessage(interpolate(strings.recommendedWorkspaceDone, { name: scope.name }));
+    }
+    async restoreWorkspaceRule(workspaceState) {
+        await ensureManagedRule(workspaceState.local.rulePath);
+        await this.refresh(true);
+        vscode.window.showInformationMessage(interpolate(STRINGS[this.getLanguage()].restoreRuleDone, { name: workspaceState.folder.name }));
+    }
+    async restoreGlobalRuleIfNeeded(scope) {
+        if (this.getSnapshot().globalScope.status === 'blocked') {
+            await ensureManagedRule(scope.rulePath);
+        }
+    }
+    async syncWorkspaceRulesForGlobalBlock(shouldBlock) {
+        const folders = vscode.workspace.workspaceFolders ?? [];
+        const scopes = await Promise.all(folders.map((folder) => inspectProjectScope(folder)));
+        if (shouldBlock) {
+            await Promise.all(scopes.map((scope) => ensureManagedRule(scope.rulePath)));
+            return;
+        }
+        await Promise.all(scopes
+            .filter((scope) => scope.status !== 'blocked')
+            .map((scope) => deleteManagedRule(scope.rulePath)));
     }
     findWorkspaceState(folderUri) {
         return this.getSnapshot().workspaceStates.find((state) => state.folder.uri.toString() === folderUri);
@@ -602,6 +693,8 @@ function buildErrorSnapshot(error) {
             configExists: false,
             scriptExists: false,
             scriptLooksLikeBlocker: false,
+            ruleExists: false,
+            ruleMatchesManagedRule: false,
             status: 'error',
             reason
         },
@@ -630,17 +723,21 @@ async function inspectProjectScope(folder) {
         baseDir: folder.uri.fsPath,
         hooksJsonPath: path.join(folder.uri.fsPath, '.cursor', 'hooks.json'),
         scriptPath: path.join(folder.uri.fsPath, '.cursor', 'hooks', 'block-subagent.sh'),
+        rulePath: getProjectRulePath(folder.uri.fsPath),
         managedCommand: PROJECT_COMMAND
     });
 }
 async function inspectScope(scope) {
     const configState = await readJsonFile(scope.hooksJsonPath);
     const scriptState = await readScriptFile(scope.scriptPath);
+    const ruleState = await readRuleFile(scope.rulePath);
     const base = {
         ...scope,
         configExists: configState.exists,
         scriptExists: scriptState.exists,
-        scriptLooksLikeBlocker: scriptState.looksLikeBlocker
+        scriptLooksLikeBlocker: scriptState.looksLikeBlocker,
+        ruleExists: ruleState.exists,
+        ruleMatchesManagedRule: ruleState.matchesManagedRule
     };
     if (configState.error) {
         return {
@@ -668,6 +765,11 @@ async function inspectScope(scope) {
     const hasAnySubagentHooks = hookEntries.length > 0;
     const hasCustomCommands = commandEntries.some((entry) => entry.command && entry.command !== scope.managedCommand);
     const hasInvalidEntries = hookEntries.some((entry) => !isCommandEntry(entry));
+    const ruleIssue = scope.rulePath && !ruleState.exists
+        ? 'the managed project rule is missing'
+        : scope.rulePath && ruleState.exists && !ruleState.matchesManagedRule
+            ? 'the managed project rule was edited and is protected'
+            : undefined;
     if (managedIndex === 0) {
         if (!scriptState.exists) {
             return {
@@ -686,7 +788,7 @@ async function inspectScope(scope) {
         return {
             ...base,
             status: 'blocked',
-            reason: 'Managed blocker is active'
+            reason: ruleIssue ? `Managed blocker is active, but ${ruleIssue}` : 'Managed blocker is active'
         };
     }
     if (managedIndex > 0) {
@@ -812,12 +914,17 @@ async function setManagedBlock(scope, shouldBlock) {
     if (shouldBlock) {
         withoutManaged.unshift({ command: scope.managedCommand });
         await ensureManagedScript(scope.scriptPath);
+        await ensureManagedRule(scope.rulePath);
+    }
+    else {
+        await deleteManagedRule(scope.rulePath);
     }
     await writeSubagentStart(scope.hooksJsonPath, data, withoutManaged.length > 0 ? withoutManaged : undefined);
 }
 async function applyRecommendedBlock(scope) {
     const data = await loadEditableHooksConfig(scope.hooksJsonPath);
     await ensureManagedScript(scope.scriptPath);
+    await ensureManagedRule(scope.rulePath);
     await writeSubagentStart(scope.hooksJsonPath, data, [{ command: scope.managedCommand }]);
 }
 async function loadEditableHooksConfig(hooksJsonPath) {
@@ -859,6 +966,23 @@ async function ensureManagedScript(scriptPath) {
     await fsp.writeFile(scriptPath, BLOCKER_SCRIPT, 'utf8');
     await fsp.chmod(scriptPath, 0o755);
 }
+async function ensureManagedRule(rulePath) {
+    if (!rulePath) {
+        return;
+    }
+    await fsp.mkdir(path.dirname(rulePath), { recursive: true });
+    await fsp.writeFile(rulePath, MANAGED_RULE, 'utf8');
+}
+async function deleteManagedRule(rulePath) {
+    if (!rulePath) {
+        return;
+    }
+    const ruleState = await readRuleFile(rulePath);
+    if (!ruleState.exists || !ruleState.matchesManagedRule) {
+        return;
+    }
+    await fsp.unlink(rulePath);
+}
 async function readJsonFile(filePath) {
     try {
         const raw = await fsp.readFile(filePath, 'utf8');
@@ -874,6 +998,31 @@ async function readJsonFile(filePath) {
         }
         if (error instanceof SyntaxError) {
             return { exists: true, error };
+        }
+        throw error;
+    }
+}
+async function readRuleFile(filePath) {
+    if (!filePath) {
+        return {
+            exists: false,
+            matchesManagedRule: false
+        };
+    }
+    try {
+        const raw = await fsp.readFile(filePath, 'utf8');
+        return {
+            exists: true,
+            matchesManagedRule: normalizeLineEndings(raw) === normalizeLineEndings(MANAGED_RULE)
+        };
+    }
+    catch (error) {
+        const nodeError = error;
+        if (nodeError.code === 'ENOENT') {
+            return {
+                exists: false,
+                matchesManagedRule: false
+            };
         }
         throw error;
     }
@@ -959,6 +1108,9 @@ function buildTooltip(snapshot, activeWorkspaceState, language) {
         lines.push(`- ${prefix} \`${state.folder.name}\`: ${formatStatusLine(state.status, language)} ${state.reason}`);
         lines.push(`  ${strings.localStatus} ${formatStatusLine(state.local.status, language)} / ${strings.globalStatus} ${formatStatusLine(state.global.status, language)}`);
         lines.push(`  ${strings.path} \`${formatShortPath(state.local.hooksJsonPath)}\``);
+        if (state.local.rulePath) {
+            lines.push(`  ${strings.ruleExists} ${formatRuleStatus(state.local, language)}: \`${formatShortPath(state.local.rulePath)}\``);
+        }
     }
     return new vscode.MarkdownString(lines.join('\n'));
 }
@@ -1282,6 +1434,9 @@ function renderSidebarHtml(webview, snapshot, language) {
     document.querySelectorAll('[data-action="recommended-workspace"]').forEach((button) => {
       button.addEventListener('click', () => vscode.postMessage({ type: 'applyRecommendedWorkspace', folderUri: button.dataset.folderUri }));
     });
+    document.querySelectorAll('[data-action="restore-workspace-rule"]').forEach((button) => {
+      button.addEventListener('click', () => vscode.postMessage({ type: 'restoreWorkspaceRule', folderUri: button.dataset.folderUri }));
+    });
   </script>
 </body>
 </html>`;
@@ -1303,6 +1458,7 @@ function renderScopeCard(scope, options) {
         && scope.status !== 'blocked');
     const toggleAction = options.folderUri ? 'toggle-workspace' : 'toggle-global';
     const recommendedAction = options.folderUri ? 'recommended-workspace' : 'recommended-global';
+    const hasRuleWarning = hasManagedRuleWarning(scope, options.effectiveStatus);
     return `<article class="card">
     <div class="card-header">
       <div>
@@ -1352,7 +1508,19 @@ function renderScopeCard(scope, options) {
         <div class="label">${escapeHtml(strings.scriptExists)}</div>
         <div class="value">${escapeHtml(scope.scriptExists ? strings.yes : strings.no)}</div>
       </div>
+      ${scope.rulePath ? `<div class="row">
+        <div class="label">${escapeHtml(strings.ruleExists)}</div>
+        <div class="value">${escapeHtml(formatRuleStatus(scope, options.language))}</div>
+      </div>` : ''}
     </div>
+
+    ${hasRuleWarning ? `<div class="warning">
+      <div><strong>${escapeHtml(strings.ruleWarningTitle)}</strong></div>
+      <div class="hint">${escapeHtml(strings.ruleWarningHelp)}</div>
+      ${options.folderUri ? `<div class="actions">
+        <button data-action="restore-workspace-rule" data-folder-uri="${escapeHtmlAttribute(options.folderUri)}">${escapeHtml(strings.restoreRule)}</button>
+      </div>` : ''}
+    </div>` : ''}
 
     ${scope.status === 'unknown' ? `<div class="warning">
       <div><strong>${escapeHtml(strings.customDetected)}</strong></div>
@@ -1382,6 +1550,18 @@ function statusLabel(status, language) {
             return strings.statusError;
     }
 }
+function hasManagedRuleWarning(scope, effectiveStatus) {
+    return Boolean(scope.rulePath
+        && effectiveStatus === 'blocked'
+        && (!scope.ruleExists || !scope.ruleMatchesManagedRule));
+}
+function formatRuleStatus(scope, language) {
+    const strings = STRINGS[language];
+    if (!scope.ruleExists) {
+        return strings.ruleMissingValue;
+    }
+    return scope.ruleMatchesManagedRule ? strings.ruleManagedValue : strings.ruleModifiedValue;
+}
 function truncateLabel(label) {
     return label.length > 18 ? `${label.slice(0, 15)}...` : label;
 }
@@ -1400,6 +1580,12 @@ function getGlobalHooksJsonPath() {
 }
 function getGlobalScriptPath() {
     return path.join(getGlobalCursorDir(), 'hooks', 'block-subagent.sh');
+}
+function getProjectRulePath(baseDir) {
+    return path.join(baseDir, '.cursor', 'rules', MANAGED_RULE_FILE_NAME);
+}
+function normalizeLineEndings(value) {
+    return value.replace(/\r\n/g, '\n');
 }
 function escapeHtml(value) {
     return value
