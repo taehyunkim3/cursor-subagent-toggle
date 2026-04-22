@@ -8,7 +8,9 @@ const GLOBAL_COMMAND = 'bash hooks/block-subagent.sh';
 const PROJECT_COMMAND = 'bash .cursor/hooks/block-subagent.sh';
 const MANAGED_RULE_FILE_NAME = 'cursor-subagent-toggle.mdc';
 const MANAGED_RULE_GITIGNORE_ENTRY = `.cursor/rules/${MANAGED_RULE_FILE_NAME}`;
-const MANAGED_GITIGNORE_START = '# Cursor Subagent Toggle: managed rule ignore';
+const MANAGED_SCRIPT_GITIGNORE_ENTRY = '.cursor/hooks/block-subagent.sh';
+const MANAGED_GITIGNORE_ENTRIES = [MANAGED_RULE_GITIGNORE_ENTRY, MANAGED_SCRIPT_GITIGNORE_ENTRY];
+const MANAGED_GITIGNORE_START = '# Cursor Subagent Toggle: managed generated files';
 const MANAGED_GITIGNORE_END = '# End Cursor Subagent Toggle';
 const BLOCKER_SCRIPT = `#!/bin/bash
 
@@ -82,6 +84,8 @@ interface RuleFileResult {
 interface GitignoreFileResult {
   exists: boolean;
   hasManagedRuleEntry: boolean;
+  hasManagedScriptEntry: boolean;
+  hasAllManagedEntries: boolean;
   hasManagedBlock: boolean;
 }
 
@@ -118,6 +122,8 @@ interface ScopeState extends ScopeDescriptor {
   ruleMatchesManagedRule: boolean;
   gitignoreExists: boolean;
   gitignoreHasManagedRuleEntry: boolean;
+  gitignoreHasManagedScriptEntry: boolean;
+  gitignoreHasAllManagedEntries: boolean;
   gitignoreHasManagedBlock: boolean;
   status: StatusKind;
   reason: string;
@@ -201,8 +207,8 @@ const STRINGS: Record<UiLanguage, Record<string, string>> = {
     ruleManagedValue: 'Managed',
     ruleMissingValue: 'Missing',
     ruleModifiedValue: 'Modified - protected',
-    gitignoreRule: 'Ignore managed rule in git',
-    gitignoreRuleHelp: 'Adds only .cursor/rules/cursor-subagent-toggle.mdc to this workspace .gitignore.',
+    gitignoreRule: 'Ignore generated blocker files in git',
+    gitignoreRuleHelp: 'Adds only .cursor/rules/cursor-subagent-toggle.mdc and .cursor/hooks/block-subagent.sh to this workspace .gitignore.',
     gitignoreStatus: '.gitignore',
     gitignoreEnabledValue: 'Enabled',
     gitignoreDisabledValue: 'Disabled',
@@ -271,8 +277,8 @@ const STRINGS: Record<UiLanguage, Record<string, string>> = {
     ruleManagedValue: '관리됨',
     ruleMissingValue: '없음',
     ruleModifiedValue: '수정됨 - 보호',
-    gitignoreRule: 'managed rule을 git에서 무시',
-    gitignoreRuleHelp: '이 workspace .gitignore에 .cursor/rules/cursor-subagent-toggle.mdc 파일만 추가합니다.',
+    gitignoreRule: '생성된 blocker 파일을 git에서 무시',
+    gitignoreRuleHelp: '이 workspace .gitignore에 .cursor/rules/cursor-subagent-toggle.mdc 및 .cursor/hooks/block-subagent.sh 파일만 추가합니다.',
     gitignoreStatus: '.gitignore',
     gitignoreEnabledValue: '활성',
     gitignoreDisabledValue: '비활성',
@@ -975,6 +981,8 @@ function buildErrorSnapshot(error: unknown): Snapshot {
       ruleMatchesManagedRule: false,
       gitignoreExists: false,
       gitignoreHasManagedRuleEntry: false,
+      gitignoreHasManagedScriptEntry: false,
+      gitignoreHasAllManagedEntries: false,
       gitignoreHasManagedBlock: false,
       status: 'error',
       reason
@@ -1026,6 +1034,8 @@ async function inspectScope(scope: ScopeDescriptor): Promise<ScopeState> {
     ruleMatchesManagedRule: ruleState.matchesManagedRule,
     gitignoreExists: gitignoreState.exists,
     gitignoreHasManagedRuleEntry: gitignoreState.hasManagedRuleEntry,
+    gitignoreHasManagedScriptEntry: gitignoreState.hasManagedScriptEntry,
+    gitignoreHasAllManagedEntries: gitignoreState.hasAllManagedEntries,
     gitignoreHasManagedBlock: gitignoreState.hasManagedBlock
   };
 
@@ -1315,7 +1325,7 @@ async function ensureManagedGitignoreEntry(gitignorePath: string | undefined): P
   }
 
   const existing = await readGitignoreRaw(gitignorePath);
-  const managedBlock = `${MANAGED_GITIGNORE_START}\n${MANAGED_RULE_GITIGNORE_ENTRY}\n${MANAGED_GITIGNORE_END}\n`;
+  const managedBlock = `${MANAGED_GITIGNORE_START}\n${MANAGED_GITIGNORE_ENTRIES.join('\n')}\n${MANAGED_GITIGNORE_END}\n`;
 
   if (existing === undefined) {
     await fsp.writeFile(gitignorePath, managedBlock, 'utf8');
@@ -1323,7 +1333,7 @@ async function ensureManagedGitignoreEntry(gitignorePath: string | undefined): P
   }
 
   const gitignoreState = parseGitignoreState(existing);
-  if (gitignoreState.hasManagedRuleEntry) {
+  if (gitignoreState.hasAllManagedEntries) {
     return;
   }
 
@@ -1390,6 +1400,8 @@ async function readGitignoreFile(filePath: string | undefined): Promise<Gitignor
     return {
       exists: false,
       hasManagedRuleEntry: false,
+      hasManagedScriptEntry: false,
+      hasAllManagedEntries: false,
       hasManagedBlock: false
     };
   }
@@ -1399,6 +1411,8 @@ async function readGitignoreFile(filePath: string | undefined): Promise<Gitignor
     return {
       exists: false,
       hasManagedRuleEntry: false,
+      hasManagedScriptEntry: false,
+      hasAllManagedEntries: false,
       hasManagedBlock: false
     };
   }
@@ -1560,7 +1574,7 @@ function renderSidebarHtml(webview: vscode.Webview, snapshot: Snapshot, language
       effectiveReason: state.reason,
       globalStatus: state.global.status,
       globalReason: state.global.reason,
-      gitignoreEnabled: controller.getWorkspaceGitignoreEnabled(state.folder.uri.toString())
+      gitignorePreferenceEnabled: controller.getWorkspaceGitignoreEnabled(state.folder.uri.toString())
     })
   ).join('');
 
@@ -1903,7 +1917,7 @@ function renderScopeCard(scope: ScopeState, options: {
   effectiveReason: string;
   globalStatus?: StatusKind;
   globalReason?: string;
-  gitignoreEnabled?: boolean;
+  gitignorePreferenceEnabled?: boolean;
 }): string {
   const strings = STRINGS[options.language];
   const localMeta = STATUS_META[scope.status];
@@ -1946,7 +1960,7 @@ function renderScopeCard(scope: ScopeState, options: {
     </div>
 
     ${options.folderUri ? `<label class="checkbox-row">
-      <input type="checkbox" data-action="toggle-workspace-gitignore" data-folder-uri="${escapeHtmlAttribute(options.folderUri)}"${options.gitignoreEnabled !== false ? ' checked' : ''}>
+      <input type="checkbox" data-action="toggle-workspace-gitignore" data-folder-uri="${escapeHtmlAttribute(options.folderUri)}"${scope.gitignoreHasAllManagedEntries ? ' checked' : ''}>
       <span class="switch-copy">
         <strong>${escapeHtml(strings.gitignoreRule)}</strong>
         <span class="hint">${escapeHtml(strings.gitignoreRuleHelp)}</span>
@@ -1988,7 +2002,7 @@ function renderScopeCard(scope: ScopeState, options: {
       </div>
       <div class="row">
         <div class="label">${escapeHtml(strings.gitignoreStatus)}</div>
-        <div class="value">${escapeHtml(formatGitignoreStatus(scope, options.gitignoreEnabled !== false, options.language))}</div>
+        <div class="value">${escapeHtml(formatGitignoreStatus(scope, options.gitignorePreferenceEnabled !== false, options.language))}</div>
       </div>` : ''}
     </div>
 
@@ -2056,11 +2070,11 @@ function formatGitignoreStatus(scope: ScopeState, preferenceEnabled: boolean, la
     return strings.gitignoreDisabledValue;
   }
 
-  if (scope.gitignoreHasManagedRuleEntry && !scope.gitignoreHasManagedBlock) {
+  if (scope.gitignoreHasAllManagedEntries && !scope.gitignoreHasManagedBlock) {
     return strings.gitignoreExternalValue;
   }
 
-  return scope.gitignoreHasManagedRuleEntry ? strings.gitignoreEnabledValue : strings.gitignoreDisabledValue;
+  return scope.gitignoreHasAllManagedEntries ? strings.gitignoreEnabledValue : strings.gitignoreDisabledValue;
 }
 
 function truncateLabel(label: string): string {
@@ -2101,9 +2115,13 @@ function normalizeLineEndings(value: string): string {
 
 function parseGitignoreState(raw: string): Omit<GitignoreFileResult, 'exists'> {
   const lines = normalizeLineEndings(raw).split('\n').map((line) => line.trim());
+  const hasManagedRuleEntry = lines.includes(MANAGED_RULE_GITIGNORE_ENTRY);
+  const hasManagedScriptEntry = lines.includes(MANAGED_SCRIPT_GITIGNORE_ENTRY);
 
   return {
-    hasManagedRuleEntry: lines.includes(MANAGED_RULE_GITIGNORE_ENTRY),
+    hasManagedRuleEntry,
+    hasManagedScriptEntry,
+    hasAllManagedEntries: hasManagedRuleEntry && hasManagedScriptEntry,
     hasManagedBlock: lines.includes(MANAGED_GITIGNORE_START) && lines.includes(MANAGED_GITIGNORE_END)
   };
 }

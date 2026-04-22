@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.5 - 2026-04-22
+
+### English
+
+- Added `.cursor/hooks/block-subagent.sh` to the managed `.gitignore` block together with `.cursor/rules/cursor-subagent-toggle.mdc`.
+- Changed the workspace git ignore checkbox to reflect the actual `.gitignore` state: it is checked only when both generated files are ignored.
+- Kept `.gitignore` cleanup limited to the extension-managed marker block so user-defined ignore rules remain untouched.
+
+### 한국어
+
+- `.cursor/rules/cursor-subagent-toggle.mdc`와 함께 `.cursor/hooks/block-subagent.sh`도 managed `.gitignore` block에 포함했습니다.
+- workspace git ignore 체크박스가 실제 `.gitignore` 상태를 반영하도록 수정했습니다. 생성 파일 두 개가 모두 무시될 때만 체크됩니다.
+- `.gitignore` 정리는 extension이 관리하는 marker block에만 제한해서 사용자가 정의한 ignore rule은 그대로 유지합니다.
+
 ## 0.1.4 - 2026-04-22
 
 ### English
