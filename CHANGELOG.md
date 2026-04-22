@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.4 - 2026-04-22
+
+### English
+
+- Added a workspace checkbox to ignore only `.cursor/rules/cursor-subagent-toggle.mdc` in git.
+- Enabled the git ignore option by default for local workspace rule injection.
+- Added and removed only the extension-managed `.gitignore` marker block, preserving user-defined ignore rules.
+- Surfaced managed rule git ignore state in each workspace card.
+
+### 한국어
+
+- `.cursor/rules/cursor-subagent-toggle.mdc` 파일만 git에서 무시하도록 설정하는 workspace 체크박스를 추가했습니다.
+- 로컬 workspace rule 주입 시 git ignore 옵션이 기본 활성화되도록 했습니다.
+- 사용자가 정의한 ignore rule을 보호하기 위해 extension이 관리하는 `.gitignore` marker block만 추가/삭제하도록 했습니다.
+- 각 workspace 카드에서 managed rule git ignore 상태를 확인할 수 있게 했습니다.
+
 ## 0.1.3 - 2026-04-21
 
 ### English

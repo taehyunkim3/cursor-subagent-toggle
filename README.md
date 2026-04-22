@@ -19,6 +19,7 @@ The extension shows global and workspace states together in a dedicated sidebar 
 - Safe handling for custom `subagentStart` hooks (`CHECK` state)
 - One-click `Apply Recommended Config` to replace only `hooks.subagentStart` and recreate extension-managed guard files
 - Managed project rule injection for stronger prompt-context guidance when subagents are disabled
+- A workspace checkbox, enabled by default, to add only the managed project rule file to `.gitignore`
 
 ### Toggle Semantics
 
@@ -27,6 +28,8 @@ The extension shows global and workspace states together in a dedicated sidebar 
 - Workspace `OFF` writes both the deny hook and a separate managed project rule.
 - Workspace `ON` removes the managed hook and deletes only `.cursor/rules/cursor-subagent-toggle.mdc` when it still matches the extension-managed content.
 - Existing user-created `.cursor/rules/*.mdc` files are not modified, merged, or deleted.
+- The local git ignore checkbox adds only `.cursor/rules/cursor-subagent-toggle.mdc` to the workspace `.gitignore`.
+- When the checkbox is turned off, the extension removes only its own managed `.gitignore` marker block and leaves user-defined ignore rules intact.
 - Global `OFF` writes the global deny hook and injects the managed project rule into currently open workspace folders.
 - Global `ON` removes the global deny hook and removes the managed project rule only from workspace folders that are not locally `OFF`.
 - Effective final state still follows Cursor scope priority: global blocking can override a local workspace.
@@ -44,6 +47,8 @@ The sidebar also shows the managed project rule state:
 - `Managed`: The extension-managed project rule exists and matches the expected content.
 - `Missing`: The managed project rule is missing while the effective state is blocked.
 - `Modified - protected`: The managed project rule file exists but no longer matches the extension content. The extension does not delete modified rule content.
+
+The workspace card also shows whether the managed project rule is ignored by git. If the exact ignore entry already exists outside the extension-managed block, it is shown as `Already ignored` and is not removed by the extension.
 
 ### Managed Hook Shape
 
@@ -89,6 +94,18 @@ The rule starts with:
 
 It also states that this rule is a higher-priority safety override for the workspace and that conflicting Cursor rules, project rules, user rules, instructions, or prompts must yield to the no-subagent rule.
 
+### Managed Git Ignore Entry
+
+When the local git ignore checkbox is enabled, the extension adds only this file path to the workspace `.gitignore`:
+
+```gitignore
+# Cursor Subagent Toggle: managed rule ignore
+.cursor/rules/cursor-subagent-toggle.mdc
+# End Cursor Subagent Toggle
+```
+
+Only this marked block is removed when the checkbox is disabled.
+
 ## 한국어
 
 Cursor Subagent Toggle은 아래 항목을 관리해서 Cursor의 subagent 생성 허용 여부를 제어합니다.
@@ -108,6 +125,7 @@ Cursor Subagent Toggle은 아래 항목을 관리해서 Cursor의 subagent 생�
 - 커스텀 `subagentStart`에 대한 안전 모드(`CHECK` 상태)
 - `Apply Recommended Config` 버튼으로 `hooks.subagentStart`만 교체하고 extension 관리 guard 파일 재생성
 - subagent 비활성화 시 더 강한 prompt-context 지시를 위한 managed project rule 주입
+- managed project rule 파일만 `.gitignore`에 추가하는 workspace 체크박스 제공. 기본값은 활성
 
 ### 토글 의미
 
@@ -116,6 +134,8 @@ Cursor Subagent Toggle은 아래 항목을 관리해서 Cursor의 subagent 생�
 - 워크스페이스 `OFF`: deny hook과 별도 managed project rule을 함께 생성
 - 워크스페이스 `ON`: managed hook을 제거하고, `.cursor/rules/cursor-subagent-toggle.mdc`가 extension 관리 내용과 일치할 때만 삭제
 - 사용자가 만든 기존 `.cursor/rules/*.mdc` 파일은 수정, 병합, 삭제하지 않음
+- 로컬 git ignore 체크박스는 workspace `.gitignore`에 `.cursor/rules/cursor-subagent-toggle.mdc` 파일만 추가
+- 체크박스를 끄면 extension이 만든 `.gitignore` marker block만 제거하고, 사용자가 정의한 ignore rule은 그대로 둠
 - 전역 `OFF`: 전역 deny hook을 적용하고 현재 열려 있는 workspace folder들에 managed project rule 주입
 - 전역 `ON`: 전역 deny hook을 제거하고, 로컬이 `OFF`가 아닌 workspace folder에서만 managed project rule 삭제
 - 최종 상태는 Cursor 범위 우선순위의 영향을 받으며, 전역 차단이 로컬 상태를 override할 수 있음
@@ -133,6 +153,8 @@ Cursor Subagent Toggle은 아래 항목을 관리해서 Cursor의 subagent 생�
 - `관리됨`: extension이 관리하는 project rule이 있고 예상 내용과 일치함
 - `없음`: 최종 상태가 차단인데 managed project rule이 없음
 - `수정됨 - 보호`: managed project rule 파일이 있지만 extension 내용과 다름. extension은 수정된 rule 내용을 삭제하지 않음
+
+workspace 카드는 managed project rule이 git에서 무시되는지도 보여줍니다. extension이 만든 block 밖에 동일한 ignore entry가 이미 있으면 `이미 무시됨`으로 표시하고 extension이 삭제하지 않습니다.
 
 ### Managed Hook 형태
 
@@ -177,3 +199,15 @@ rule은 아래 문구로 시작합니다.
 ```
 
 또한 이 rule이 워크스페이스의 higher-priority safety override이며, 충돌하는 Cursor rule, project rule, user rule, instruction, prompt보다 no-subagent rule을 우선해야 한다고 명시합니다.
+
+### Managed Git Ignore Entry
+
+로컬 git ignore 체크박스가 활성화되어 있으면 extension은 workspace `.gitignore`에 아래 파일 경로만 추가합니다.
+
+```gitignore
+# Cursor Subagent Toggle: managed rule ignore
+.cursor/rules/cursor-subagent-toggle.mdc
+# End Cursor Subagent Toggle
+```
+
+체크박스를 끌 때는 이 marker block만 제거합니다.

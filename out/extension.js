@@ -43,6 +43,9 @@ const vscode = __importStar(require("vscode"));
 const GLOBAL_COMMAND = 'bash hooks/block-subagent.sh';
 const PROJECT_COMMAND = 'bash .cursor/hooks/block-subagent.sh';
 const MANAGED_RULE_FILE_NAME = 'cursor-subagent-toggle.mdc';
+const MANAGED_RULE_GITIGNORE_ENTRY = `.cursor/rules/${MANAGED_RULE_FILE_NAME}`;
+const MANAGED_GITIGNORE_START = '# Cursor Subagent Toggle: managed rule ignore';
+const MANAGED_GITIGNORE_END = '# End Cursor Subagent Toggle';
 const BLOCKER_SCRIPT = `#!/bin/bash
 
 # Return a deny decision for Cursor's subagent hook.
@@ -79,6 +82,7 @@ Do all work directly by yourself:
 - Handle complex tasks in this exact context. DO NOT delegate.
 `;
 const LANGUAGE_KEY = 'uiLanguage';
+const GITIGNORE_PREF_PREFIX = 'gitignoreManagedRule:';
 const STATUS_META = {
     enabled: { icon: '🟢', label: 'ON' },
     blocked: { icon: '🔴', label: 'OFF' },
@@ -118,6 +122,13 @@ const STRINGS = {
         ruleManagedValue: 'Managed',
         ruleMissingValue: 'Missing',
         ruleModifiedValue: 'Modified - protected',
+        gitignoreRule: 'Ignore managed rule in git',
+        gitignoreRuleHelp: 'Adds only .cursor/rules/cursor-subagent-toggle.mdc to this workspace .gitignore.',
+        gitignoreStatus: '.gitignore',
+        gitignoreEnabledValue: 'Enabled',
+        gitignoreDisabledValue: 'Disabled',
+        gitignoreExternalValue: 'Already ignored',
+        gitignorePreferenceDone: '{name}: managed rule git ignore preference was updated.',
         yes: 'Present',
         no: 'Missing',
         customDetected: 'Custom subagentStart hooks were detected.',
@@ -181,6 +192,13 @@ const STRINGS = {
         ruleManagedValue: '관리됨',
         ruleMissingValue: '없음',
         ruleModifiedValue: '수정됨 - 보호',
+        gitignoreRule: 'managed rule을 git에서 무시',
+        gitignoreRuleHelp: '이 workspace .gitignore에 .cursor/rules/cursor-subagent-toggle.mdc 파일만 추가합니다.',
+        gitignoreStatus: '.gitignore',
+        gitignoreEnabledValue: '활성',
+        gitignoreDisabledValue: '비활성',
+        gitignoreExternalValue: '이미 무시됨',
+        gitignorePreferenceDone: '{name}: managed rule git ignore 설정을 업데이트했습니다.',
         yes: '있음',
         no: '없음',
         customDetected: '커스텀 subagentStart hook이 감지되었습니다.',
@@ -256,6 +274,7 @@ class SubagentController {
         const hookWatcher = vscode.workspace.createFileSystemWatcher('**/.cursor/hooks.json');
         const scriptWatcher = vscode.workspace.createFileSystemWatcher('**/.cursor/hooks/block-subagent.sh');
         const ruleWatcher = vscode.workspace.createFileSystemWatcher(`**/.cursor/rules/${MANAGED_RULE_FILE_NAME}`);
+        const gitignoreWatcher = vscode.workspace.createFileSystemWatcher('**/.gitignore');
         const triggerRefresh = () => this.scheduleRefresh();
         hookWatcher.onDidCreate(triggerRefresh, this, this.context.subscriptions);
         hookWatcher.onDidChange(triggerRefresh, this, this.context.subscriptions);
@@ -266,7 +285,10 @@ class SubagentController {
         ruleWatcher.onDidCreate(triggerRefresh, this, this.context.subscriptions);
         ruleWatcher.onDidChange(triggerRefresh, this, this.context.subscriptions);
         ruleWatcher.onDidDelete(triggerRefresh, this, this.context.subscriptions);
-        this.context.subscriptions.push(hookWatcher, scriptWatcher, ruleWatcher, vscode.workspace.onDidChangeWorkspaceFolders(() => {
+        gitignoreWatcher.onDidCreate(triggerRefresh, this, this.context.subscriptions);
+        gitignoreWatcher.onDidChange(triggerRefresh, this, this.context.subscriptions);
+        gitignoreWatcher.onDidDelete(triggerRefresh, this, this.context.subscriptions);
+        this.context.subscriptions.push(hookWatcher, scriptWatcher, ruleWatcher, gitignoreWatcher, vscode.workspace.onDidChangeWorkspaceFolders(() => {
             void this.refresh();
         }), vscode.window.onDidChangeActiveTextEditor(() => this.renderStatusBar()));
     }
@@ -367,7 +389,17 @@ class SubagentController {
                 }
                 break;
             }
+            case 'toggleWorkspaceGitignore': {
+                const workspaceState = this.findWorkspaceState(message.folderUri);
+                if (workspaceState) {
+                    await this.setWorkspaceGitignoreEnabled(workspaceState, message.enabled);
+                }
+                break;
+            }
         }
+    }
+    getWorkspaceGitignoreEnabled(folderUri) {
+        return this.context.workspaceState.get(getGitignorePreferenceKey(folderUri), true);
     }
     renderStatusBar() {
         const snapshot = this.getSnapshot();
@@ -541,17 +573,21 @@ class SubagentController {
         await this.toggleWorkspaceState(picked);
     }
     async toggleWorkspaceState(workspaceState) {
+        let shouldBlock;
         if (workspaceState.local.status === 'unknown') {
             const confirmed = await confirmRecommendedOverwrite(workspaceState.local, this.getLanguage());
             if (!confirmed) {
                 return;
             }
             await applyRecommendedBlock(workspaceState.local);
+            shouldBlock = true;
         }
         else {
-            await setManagedBlock(workspaceState.local, workspaceState.local.status !== 'blocked');
+            shouldBlock = workspaceState.local.status !== 'blocked';
+            await setManagedBlock(workspaceState.local, shouldBlock);
         }
         await this.restoreGlobalRuleIfNeeded(workspaceState.local);
+        await this.syncGitignoreForRulePresence(workspaceState, shouldBlock || this.getSnapshot().globalScope.status === 'blocked');
         await this.refresh(true);
         const updatedState = this.findWorkspaceState(workspaceState.folder.uri.toString());
         if (!updatedState) {
@@ -561,9 +597,11 @@ class SubagentController {
         vscode.window.showInformationMessage(`${updatedState.folder.name}: ${meta.icon} ${meta.label}`);
     }
     async setWorkspaceEnabled(workspaceState, desiredEnabled) {
+        let shouldBlock;
         if (workspaceState.local.status === 'unknown') {
             if (desiredEnabled) {
                 await setManagedBlock(workspaceState.local, false);
+                shouldBlock = false;
             }
             else {
                 const confirmed = await confirmRecommendedOverwrite(workspaceState.local, this.getLanguage());
@@ -572,12 +610,15 @@ class SubagentController {
                     return;
                 }
                 await applyRecommendedBlock(workspaceState.local);
+                shouldBlock = true;
             }
         }
         else {
-            await setManagedBlock(workspaceState.local, !desiredEnabled);
+            shouldBlock = !desiredEnabled;
+            await setManagedBlock(workspaceState.local, shouldBlock);
         }
         await this.restoreGlobalRuleIfNeeded(workspaceState.local);
+        await this.syncGitignoreForRulePresence(workspaceState, shouldBlock || this.getSnapshot().globalScope.status === 'blocked');
         await this.refresh(true);
     }
     async applyRecommendedGlobal() {
@@ -610,6 +651,12 @@ class SubagentController {
         if (scope.type === 'global') {
             await this.syncWorkspaceRulesForGlobalBlock(true);
         }
+        else {
+            const workspaceState = this.findWorkspaceState(scope.folder?.uri.toString() ?? '');
+            if (workspaceState) {
+                await this.syncGitignoreForRulePresence(workspaceState, true);
+            }
+        }
         await this.refresh(true);
         const strings = STRINGS[this.getLanguage()];
         if (scope.type === 'global') {
@@ -620,6 +667,7 @@ class SubagentController {
     }
     async restoreWorkspaceRule(workspaceState) {
         await ensureManagedRule(workspaceState.local.rulePath);
+        await this.syncGitignoreForRulePresence(workspaceState, true);
         await this.refresh(true);
         vscode.window.showInformationMessage(interpolate(STRINGS[this.getLanguage()].restoreRuleDone, { name: workspaceState.folder.name }));
     }
@@ -628,16 +676,51 @@ class SubagentController {
             await ensureManagedRule(scope.rulePath);
         }
     }
+    async setWorkspaceGitignoreEnabled(workspaceState, enabled) {
+        const folderUri = workspaceState.folder.uri.toString();
+        await this.context.workspaceState.update(getGitignorePreferenceKey(folderUri), enabled);
+        await this.syncGitignoreForRulePresence(workspaceState, workspaceState.status === 'blocked');
+        await this.refresh(true);
+        vscode.window.showInformationMessage(interpolate(STRINGS[this.getLanguage()].gitignorePreferenceDone, { name: workspaceState.folder.name }));
+    }
+    async syncGitignoreForRulePresence(workspaceState, ruleShouldExist) {
+        if (!workspaceState.local.gitignorePath) {
+            return;
+        }
+        if (ruleShouldExist && this.getWorkspaceGitignoreEnabled(workspaceState.folder.uri.toString())) {
+            await ensureManagedGitignoreEntry(workspaceState.local.gitignorePath);
+            return;
+        }
+        await deleteManagedGitignoreBlock(workspaceState.local.gitignorePath);
+    }
     async syncWorkspaceRulesForGlobalBlock(shouldBlock) {
         const folders = vscode.workspace.workspaceFolders ?? [];
         const scopes = await Promise.all(folders.map((folder) => inspectProjectScope(folder)));
         if (shouldBlock) {
-            await Promise.all(scopes.map((scope) => ensureManagedRule(scope.rulePath)));
+            await Promise.all(scopes.map(async (scope) => {
+                await ensureManagedRule(scope.rulePath);
+                const workspaceState = this.getWorkspaceStateForScope(scope);
+                if (workspaceState) {
+                    await this.syncGitignoreForRulePresence(workspaceState, true);
+                }
+            }));
             return;
         }
         await Promise.all(scopes
             .filter((scope) => scope.status !== 'blocked')
-            .map((scope) => deleteManagedRule(scope.rulePath)));
+            .map(async (scope) => {
+            await deleteManagedRule(scope.rulePath);
+            const workspaceState = this.getWorkspaceStateForScope(scope);
+            if (workspaceState) {
+                await this.syncGitignoreForRulePresence(workspaceState, false);
+            }
+        }));
+    }
+    getWorkspaceStateForScope(scope) {
+        if (!scope.folder) {
+            return undefined;
+        }
+        return this.findWorkspaceState(scope.folder.uri.toString());
     }
     findWorkspaceState(folderUri) {
         return this.getSnapshot().workspaceStates.find((state) => state.folder.uri.toString() === folderUri);
@@ -666,7 +749,7 @@ class SidebarWebviewProvider {
         if (!this.view) {
             return;
         }
-        this.view.webview.html = renderSidebarHtml(this.view.webview, snapshot, language);
+        this.view.webview.html = renderSidebarHtml(this.view.webview, snapshot, language, this.controller);
     }
 }
 async function buildSnapshot() {
@@ -695,6 +778,9 @@ function buildErrorSnapshot(error) {
             scriptLooksLikeBlocker: false,
             ruleExists: false,
             ruleMatchesManagedRule: false,
+            gitignoreExists: false,
+            gitignoreHasManagedRuleEntry: false,
+            gitignoreHasManagedBlock: false,
             status: 'error',
             reason
         },
@@ -724,6 +810,7 @@ async function inspectProjectScope(folder) {
         hooksJsonPath: path.join(folder.uri.fsPath, '.cursor', 'hooks.json'),
         scriptPath: path.join(folder.uri.fsPath, '.cursor', 'hooks', 'block-subagent.sh'),
         rulePath: getProjectRulePath(folder.uri.fsPath),
+        gitignorePath: path.join(folder.uri.fsPath, '.gitignore'),
         managedCommand: PROJECT_COMMAND
     });
 }
@@ -731,13 +818,17 @@ async function inspectScope(scope) {
     const configState = await readJsonFile(scope.hooksJsonPath);
     const scriptState = await readScriptFile(scope.scriptPath);
     const ruleState = await readRuleFile(scope.rulePath);
+    const gitignoreState = await readGitignoreFile(scope.gitignorePath);
     const base = {
         ...scope,
         configExists: configState.exists,
         scriptExists: scriptState.exists,
         scriptLooksLikeBlocker: scriptState.looksLikeBlocker,
         ruleExists: ruleState.exists,
-        ruleMatchesManagedRule: ruleState.matchesManagedRule
+        ruleMatchesManagedRule: ruleState.matchesManagedRule,
+        gitignoreExists: gitignoreState.exists,
+        gitignoreHasManagedRuleEntry: gitignoreState.hasManagedRuleEntry,
+        gitignoreHasManagedBlock: gitignoreState.hasManagedBlock
     };
     if (configState.error) {
         return {
@@ -983,6 +1074,39 @@ async function deleteManagedRule(rulePath) {
     }
     await fsp.unlink(rulePath);
 }
+async function ensureManagedGitignoreEntry(gitignorePath) {
+    if (!gitignorePath) {
+        return;
+    }
+    const existing = await readGitignoreRaw(gitignorePath);
+    const managedBlock = `${MANAGED_GITIGNORE_START}\n${MANAGED_RULE_GITIGNORE_ENTRY}\n${MANAGED_GITIGNORE_END}\n`;
+    if (existing === undefined) {
+        await fsp.writeFile(gitignorePath, managedBlock, 'utf8');
+        return;
+    }
+    const gitignoreState = parseGitignoreState(existing);
+    if (gitignoreState.hasManagedRuleEntry) {
+        return;
+    }
+    const normalized = normalizeLineEndings(existing);
+    const separator = normalized.length > 0 && !normalized.endsWith('\n') ? '\n' : '';
+    const spacer = normalized.length > 0 && !normalized.endsWith('\n\n') ? '\n' : '';
+    await fsp.writeFile(gitignorePath, `${normalized}${separator}${spacer}${managedBlock}`, 'utf8');
+}
+async function deleteManagedGitignoreBlock(gitignorePath) {
+    if (!gitignorePath) {
+        return;
+    }
+    const existing = await readGitignoreRaw(gitignorePath);
+    if (existing === undefined) {
+        return;
+    }
+    const next = removeManagedGitignoreBlock(existing);
+    if (next === existing) {
+        return;
+    }
+    await fsp.writeFile(gitignorePath, next, 'utf8');
+}
 async function readJsonFile(filePath) {
     try {
         const raw = await fsp.readFile(filePath, 'utf8');
@@ -1001,6 +1125,39 @@ async function readJsonFile(filePath) {
         }
         throw error;
     }
+}
+async function readGitignoreRaw(filePath) {
+    try {
+        return await fsp.readFile(filePath, 'utf8');
+    }
+    catch (error) {
+        const nodeError = error;
+        if (nodeError.code === 'ENOENT') {
+            return undefined;
+        }
+        throw error;
+    }
+}
+async function readGitignoreFile(filePath) {
+    if (!filePath) {
+        return {
+            exists: false,
+            hasManagedRuleEntry: false,
+            hasManagedBlock: false
+        };
+    }
+    const raw = await readGitignoreRaw(filePath);
+    if (raw === undefined) {
+        return {
+            exists: false,
+            hasManagedRuleEntry: false,
+            hasManagedBlock: false
+        };
+    }
+    return {
+        exists: true,
+        ...parseGitignoreState(raw)
+    };
 }
 async function readRuleFile(filePath) {
     if (!filePath) {
@@ -1114,7 +1271,7 @@ function buildTooltip(snapshot, activeWorkspaceState, language) {
     }
     return new vscode.MarkdownString(lines.join('\n'));
 }
-function renderSidebarHtml(webview, snapshot, language) {
+function renderSidebarHtml(webview, snapshot, language, controller) {
     const strings = STRINGS[language];
     const nonce = createNonce();
     const statusSummary = formatStatusLine(snapshot.aggregate.status, language);
@@ -1130,7 +1287,8 @@ function renderSidebarHtml(webview, snapshot, language) {
         effectiveStatus: state.status,
         effectiveReason: state.reason,
         globalStatus: state.global.status,
-        globalReason: state.global.reason
+        globalReason: state.global.reason,
+        gitignoreEnabled: controller.getWorkspaceGitignoreEnabled(state.folder.uri.toString())
     })).join('');
     return `<!DOCTYPE html>
 <html lang="${language}">
@@ -1291,6 +1449,21 @@ function renderSidebarHtml(webview, snapshot, language) {
       border-bottom: 1px solid var(--border);
       margin: 12px 0;
     }
+    .checkbox-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 10px;
+    }
+    .checkbox-row input {
+      width: 16px;
+      height: 16px;
+      margin: 2px 0 0;
+      flex: 0 0 auto;
+      accent-color: var(--accent);
+    }
     .switch-copy {
       display: grid;
       gap: 2px;
@@ -1437,6 +1610,13 @@ function renderSidebarHtml(webview, snapshot, language) {
     document.querySelectorAll('[data-action="restore-workspace-rule"]').forEach((button) => {
       button.addEventListener('click', () => vscode.postMessage({ type: 'restoreWorkspaceRule', folderUri: button.dataset.folderUri }));
     });
+    document.querySelectorAll('[data-action="toggle-workspace-gitignore"]').forEach((input) => {
+      input.addEventListener('change', (event) => vscode.postMessage({
+        type: 'toggleWorkspaceGitignore',
+        folderUri: input.dataset.folderUri,
+        enabled: event.target.checked
+      }));
+    });
   </script>
 </body>
 </html>`;
@@ -1479,6 +1659,14 @@ function renderScopeCard(scope, options) {
       </label>
     </div>
 
+    ${options.folderUri ? `<label class="checkbox-row">
+      <input type="checkbox" data-action="toggle-workspace-gitignore" data-folder-uri="${escapeHtmlAttribute(options.folderUri)}"${options.gitignoreEnabled !== false ? ' checked' : ''}>
+      <span class="switch-copy">
+        <strong>${escapeHtml(strings.gitignoreRule)}</strong>
+        <span class="hint">${escapeHtml(strings.gitignoreRuleHelp)}</span>
+      </span>
+    </label>` : ''}
+
     ${isOverriddenByGlobal ? `<div class="warning">
       <div class="hint">${escapeHtml(strings.overriddenByGlobal)}</div>
     </div>` : ''}
@@ -1511,6 +1699,10 @@ function renderScopeCard(scope, options) {
       ${scope.rulePath ? `<div class="row">
         <div class="label">${escapeHtml(strings.ruleExists)}</div>
         <div class="value">${escapeHtml(formatRuleStatus(scope, options.language))}</div>
+      </div>
+      <div class="row">
+        <div class="label">${escapeHtml(strings.gitignoreStatus)}</div>
+        <div class="value">${escapeHtml(formatGitignoreStatus(scope, options.gitignoreEnabled !== false, options.language))}</div>
       </div>` : ''}
     </div>
 
@@ -1562,6 +1754,16 @@ function formatRuleStatus(scope, language) {
     }
     return scope.ruleMatchesManagedRule ? strings.ruleManagedValue : strings.ruleModifiedValue;
 }
+function formatGitignoreStatus(scope, preferenceEnabled, language) {
+    const strings = STRINGS[language];
+    if (!preferenceEnabled) {
+        return strings.gitignoreDisabledValue;
+    }
+    if (scope.gitignoreHasManagedRuleEntry && !scope.gitignoreHasManagedBlock) {
+        return strings.gitignoreExternalValue;
+    }
+    return scope.gitignoreHasManagedRuleEntry ? strings.gitignoreEnabledValue : strings.gitignoreDisabledValue;
+}
 function truncateLabel(label) {
     return label.length > 18 ? `${label.slice(0, 15)}...` : label;
 }
@@ -1584,8 +1786,50 @@ function getGlobalScriptPath() {
 function getProjectRulePath(baseDir) {
     return path.join(baseDir, '.cursor', 'rules', MANAGED_RULE_FILE_NAME);
 }
+function getGitignorePreferenceKey(folderUri) {
+    return `${GITIGNORE_PREF_PREFIX}${folderUri}`;
+}
 function normalizeLineEndings(value) {
     return value.replace(/\r\n/g, '\n');
+}
+function parseGitignoreState(raw) {
+    const lines = normalizeLineEndings(raw).split('\n').map((line) => line.trim());
+    return {
+        hasManagedRuleEntry: lines.includes(MANAGED_RULE_GITIGNORE_ENTRY),
+        hasManagedBlock: lines.includes(MANAGED_GITIGNORE_START) && lines.includes(MANAGED_GITIGNORE_END)
+    };
+}
+function removeManagedGitignoreBlock(raw) {
+    const normalized = normalizeLineEndings(raw);
+    const lines = normalized.split('\n');
+    const nextLines = [];
+    let isInsideManagedBlock = false;
+    let removed = false;
+    for (const line of lines) {
+        if (line.trim() === MANAGED_GITIGNORE_START) {
+            isInsideManagedBlock = true;
+            removed = true;
+            continue;
+        }
+        if (isInsideManagedBlock) {
+            if (line.trim() === MANAGED_GITIGNORE_END) {
+                isInsideManagedBlock = false;
+            }
+            continue;
+        }
+        nextLines.push(line);
+    }
+    if (!removed) {
+        return raw;
+    }
+    return trimTrailingBlankLines(nextLines).join('\n');
+}
+function trimTrailingBlankLines(lines) {
+    const next = [...lines];
+    while (next.length > 0 && next[next.length - 1] === '') {
+        next.pop();
+    }
+    return next.length > 0 ? [...next, ''] : [];
 }
 function escapeHtml(value) {
     return value
