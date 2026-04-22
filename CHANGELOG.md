@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.6 - 2026-04-22
+
+### English
+
+- Added a separate workspace checkbox for ignoring `.cursor/hooks.json` in git.
+- Made the hooks.json checkbox reflect the actual workspace `.gitignore` state.
+- Added and removed only the extension-managed hooks.json marker block, preserving user-defined ignore rules.
+- Surfaced hooks.json git ignore state separately from generated blocker file ignore state.
+
+### 한국어
+
+- `.cursor/hooks.json`을 git에서 무시할지 설정하는 별도 workspace 체크박스를 추가했습니다.
+- hooks.json 체크박스가 실제 workspace `.gitignore` 상태를 반영하도록 했습니다.
+- 사용자가 정의한 ignore rule을 보호하기 위해 extension이 관리하는 hooks.json marker block만 추가/삭제하도록 했습니다.
+- hooks.json git ignore 상태를 생성된 blocker 파일 ignore 상태와 분리해서 표시합니다.
+
 ## 0.1.5 - 2026-04-22
 
 ### English

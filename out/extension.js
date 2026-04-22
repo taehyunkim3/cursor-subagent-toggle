@@ -47,6 +47,8 @@ const MANAGED_RULE_GITIGNORE_ENTRY = `.cursor/rules/${MANAGED_RULE_FILE_NAME}`;
 const MANAGED_SCRIPT_GITIGNORE_ENTRY = '.cursor/hooks/block-subagent.sh';
 const MANAGED_GITIGNORE_ENTRIES = [MANAGED_RULE_GITIGNORE_ENTRY, MANAGED_SCRIPT_GITIGNORE_ENTRY];
 const MANAGED_GITIGNORE_START = '# Cursor Subagent Toggle: managed generated files';
+const HOOKS_JSON_GITIGNORE_ENTRY = '.cursor/hooks.json';
+const HOOKS_JSON_GITIGNORE_START = '# Cursor Subagent Toggle: hooks config ignore';
 const MANAGED_GITIGNORE_END = '# End Cursor Subagent Toggle';
 const BLOCKER_SCRIPT = `#!/bin/bash
 
@@ -131,6 +133,10 @@ const STRINGS = {
         gitignoreDisabledValue: 'Disabled',
         gitignoreExternalValue: 'Already ignored',
         gitignorePreferenceDone: '{name}: managed rule git ignore preference was updated.',
+        hooksJsonGitignoreRule: 'Ignore hooks.json in git',
+        hooksJsonGitignoreRuleHelp: 'Adds only .cursor/hooks.json to this workspace .gitignore.',
+        hooksJsonGitignoreStatus: 'hooks.json .gitignore',
+        hooksJsonGitignoreDone: '{name}: hooks.json git ignore setting was updated.',
         yes: 'Present',
         no: 'Missing',
         customDetected: 'Custom subagentStart hooks were detected.',
@@ -201,6 +207,10 @@ const STRINGS = {
         gitignoreDisabledValue: '비활성',
         gitignoreExternalValue: '이미 무시됨',
         gitignorePreferenceDone: '{name}: managed rule git ignore 설정을 업데이트했습니다.',
+        hooksJsonGitignoreRule: 'hooks.json을 git에서 무시',
+        hooksJsonGitignoreRuleHelp: '이 workspace .gitignore에 .cursor/hooks.json 파일만 추가합니다.',
+        hooksJsonGitignoreStatus: 'hooks.json .gitignore',
+        hooksJsonGitignoreDone: '{name}: hooks.json git ignore 설정을 업데이트했습니다.',
         yes: '있음',
         no: '없음',
         customDetected: '커스텀 subagentStart hook이 감지되었습니다.',
@@ -395,6 +405,13 @@ class SubagentController {
                 const workspaceState = this.findWorkspaceState(message.folderUri);
                 if (workspaceState) {
                     await this.setWorkspaceGitignoreEnabled(workspaceState, message.enabled);
+                }
+                break;
+            }
+            case 'toggleWorkspaceHooksJsonGitignore': {
+                const workspaceState = this.findWorkspaceState(message.folderUri);
+                if (workspaceState) {
+                    await this.setWorkspaceHooksJsonGitignoreEnabled(workspaceState, message.enabled);
                 }
                 break;
             }
@@ -685,6 +702,19 @@ class SubagentController {
         await this.refresh(true);
         vscode.window.showInformationMessage(interpolate(STRINGS[this.getLanguage()].gitignorePreferenceDone, { name: workspaceState.folder.name }));
     }
+    async setWorkspaceHooksJsonGitignoreEnabled(workspaceState, enabled) {
+        if (!workspaceState.local.gitignorePath) {
+            return;
+        }
+        if (enabled) {
+            await ensureHooksJsonGitignoreEntry(workspaceState.local.gitignorePath);
+        }
+        else {
+            await deleteHooksJsonGitignoreBlock(workspaceState.local.gitignorePath);
+        }
+        await this.refresh(true);
+        vscode.window.showInformationMessage(interpolate(STRINGS[this.getLanguage()].hooksJsonGitignoreDone, { name: workspaceState.folder.name }));
+    }
     async syncGitignoreForRulePresence(workspaceState, ruleShouldExist) {
         if (!workspaceState.local.gitignorePath) {
             return;
@@ -785,6 +815,8 @@ function buildErrorSnapshot(error) {
             gitignoreHasManagedScriptEntry: false,
             gitignoreHasAllManagedEntries: false,
             gitignoreHasManagedBlock: false,
+            gitignoreHasHooksJsonEntry: false,
+            gitignoreHasHooksJsonBlock: false,
             status: 'error',
             reason
         },
@@ -834,7 +866,9 @@ async function inspectScope(scope) {
         gitignoreHasManagedRuleEntry: gitignoreState.hasManagedRuleEntry,
         gitignoreHasManagedScriptEntry: gitignoreState.hasManagedScriptEntry,
         gitignoreHasAllManagedEntries: gitignoreState.hasAllManagedEntries,
-        gitignoreHasManagedBlock: gitignoreState.hasManagedBlock
+        gitignoreHasManagedBlock: gitignoreState.hasManagedBlock,
+        gitignoreHasHooksJsonEntry: gitignoreState.hasHooksJsonEntry,
+        gitignoreHasHooksJsonBlock: gitignoreState.hasHooksJsonBlock
     };
     if (configState.error) {
         return {
@@ -1113,6 +1147,39 @@ async function deleteManagedGitignoreBlock(gitignorePath) {
     }
     await fsp.writeFile(gitignorePath, next, 'utf8');
 }
+async function ensureHooksJsonGitignoreEntry(gitignorePath) {
+    if (!gitignorePath) {
+        return;
+    }
+    const existing = await readGitignoreRaw(gitignorePath);
+    const hooksJsonBlock = `${HOOKS_JSON_GITIGNORE_START}\n${HOOKS_JSON_GITIGNORE_ENTRY}\n${MANAGED_GITIGNORE_END}\n`;
+    if (existing === undefined) {
+        await fsp.writeFile(gitignorePath, hooksJsonBlock, 'utf8');
+        return;
+    }
+    const gitignoreState = parseGitignoreState(existing);
+    if (gitignoreState.hasHooksJsonEntry) {
+        return;
+    }
+    const normalized = normalizeLineEndings(existing);
+    const separator = normalized.length > 0 && !normalized.endsWith('\n') ? '\n' : '';
+    const spacer = normalized.length > 0 && !normalized.endsWith('\n\n') ? '\n' : '';
+    await fsp.writeFile(gitignorePath, `${normalized}${separator}${spacer}${hooksJsonBlock}`, 'utf8');
+}
+async function deleteHooksJsonGitignoreBlock(gitignorePath) {
+    if (!gitignorePath) {
+        return;
+    }
+    const existing = await readGitignoreRaw(gitignorePath);
+    if (existing === undefined) {
+        return;
+    }
+    const next = removeGitignoreBlock(existing, HOOKS_JSON_GITIGNORE_START);
+    if (next === existing) {
+        return;
+    }
+    await fsp.writeFile(gitignorePath, next, 'utf8');
+}
 async function readJsonFile(filePath) {
     try {
         const raw = await fsp.readFile(filePath, 'utf8');
@@ -1151,7 +1218,9 @@ async function readGitignoreFile(filePath) {
             hasManagedRuleEntry: false,
             hasManagedScriptEntry: false,
             hasAllManagedEntries: false,
-            hasManagedBlock: false
+            hasManagedBlock: false,
+            hasHooksJsonEntry: false,
+            hasHooksJsonBlock: false
         };
     }
     const raw = await readGitignoreRaw(filePath);
@@ -1161,7 +1230,9 @@ async function readGitignoreFile(filePath) {
             hasManagedRuleEntry: false,
             hasManagedScriptEntry: false,
             hasAllManagedEntries: false,
-            hasManagedBlock: false
+            hasManagedBlock: false,
+            hasHooksJsonEntry: false,
+            hasHooksJsonBlock: false
         };
     }
     return {
@@ -1627,6 +1698,13 @@ function renderSidebarHtml(webview, snapshot, language, controller) {
         enabled: event.target.checked
       }));
     });
+    document.querySelectorAll('[data-action="toggle-workspace-hooks-json-gitignore"]').forEach((input) => {
+      input.addEventListener('change', (event) => vscode.postMessage({
+        type: 'toggleWorkspaceHooksJsonGitignore',
+        folderUri: input.dataset.folderUri,
+        enabled: event.target.checked
+      }));
+    });
   </script>
 </body>
 </html>`;
@@ -1675,6 +1753,13 @@ function renderScopeCard(scope, options) {
         <strong>${escapeHtml(strings.gitignoreRule)}</strong>
         <span class="hint">${escapeHtml(strings.gitignoreRuleHelp)}</span>
       </span>
+    </label>
+    <label class="checkbox-row">
+      <input type="checkbox" data-action="toggle-workspace-hooks-json-gitignore" data-folder-uri="${escapeHtmlAttribute(options.folderUri)}"${scope.gitignoreHasHooksJsonEntry ? ' checked' : ''}>
+      <span class="switch-copy">
+        <strong>${escapeHtml(strings.hooksJsonGitignoreRule)}</strong>
+        <span class="hint">${escapeHtml(strings.hooksJsonGitignoreRuleHelp)}</span>
+      </span>
     </label>` : ''}
 
     ${isOverriddenByGlobal ? `<div class="warning">
@@ -1713,6 +1798,10 @@ function renderScopeCard(scope, options) {
       <div class="row">
         <div class="label">${escapeHtml(strings.gitignoreStatus)}</div>
         <div class="value">${escapeHtml(formatGitignoreStatus(scope, options.gitignorePreferenceEnabled !== false, options.language))}</div>
+      </div>
+      <div class="row">
+        <div class="label">${escapeHtml(strings.hooksJsonGitignoreStatus)}</div>
+        <div class="value">${escapeHtml(formatHooksJsonGitignoreStatus(scope, options.language))}</div>
       </div>` : ''}
     </div>
 
@@ -1774,6 +1863,13 @@ function formatGitignoreStatus(scope, preferenceEnabled, language) {
     }
     return scope.gitignoreHasAllManagedEntries ? strings.gitignoreEnabledValue : strings.gitignoreDisabledValue;
 }
+function formatHooksJsonGitignoreStatus(scope, language) {
+    const strings = STRINGS[language];
+    if (scope.gitignoreHasHooksJsonEntry && !scope.gitignoreHasHooksJsonBlock) {
+        return strings.gitignoreExternalValue;
+    }
+    return scope.gitignoreHasHooksJsonEntry ? strings.gitignoreEnabledValue : strings.gitignoreDisabledValue;
+}
 function truncateLabel(label) {
     return label.length > 18 ? `${label.slice(0, 15)}...` : label;
 }
@@ -1806,21 +1902,27 @@ function parseGitignoreState(raw) {
     const lines = normalizeLineEndings(raw).split('\n').map((line) => line.trim());
     const hasManagedRuleEntry = lines.includes(MANAGED_RULE_GITIGNORE_ENTRY);
     const hasManagedScriptEntry = lines.includes(MANAGED_SCRIPT_GITIGNORE_ENTRY);
+    const hasHooksJsonEntry = lines.includes(HOOKS_JSON_GITIGNORE_ENTRY);
     return {
         hasManagedRuleEntry,
         hasManagedScriptEntry,
         hasAllManagedEntries: hasManagedRuleEntry && hasManagedScriptEntry,
-        hasManagedBlock: lines.includes(MANAGED_GITIGNORE_START) && lines.includes(MANAGED_GITIGNORE_END)
+        hasManagedBlock: lines.includes(MANAGED_GITIGNORE_START) && lines.includes(MANAGED_GITIGNORE_END),
+        hasHooksJsonEntry,
+        hasHooksJsonBlock: lines.includes(HOOKS_JSON_GITIGNORE_START) && lines.includes(MANAGED_GITIGNORE_END)
     };
 }
 function removeManagedGitignoreBlock(raw) {
+    return removeGitignoreBlock(raw, MANAGED_GITIGNORE_START);
+}
+function removeGitignoreBlock(raw, startMarker) {
     const normalized = normalizeLineEndings(raw);
     const lines = normalized.split('\n');
     const nextLines = [];
     let isInsideManagedBlock = false;
     let removed = false;
     for (const line of lines) {
-        if (line.trim() === MANAGED_GITIGNORE_START) {
+        if (line.trim() === startMarker) {
             isInsideManagedBlock = true;
             removed = true;
             continue;
