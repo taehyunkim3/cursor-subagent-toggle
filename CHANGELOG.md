@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.8 - 2026-04-22
+
+### English
+
+- Changed the default blocker to hooks-only: managed installs now write `preToolUse` for `Task` plus `subagentStart`.
+- Added the second managed hook script at `.cursor/hooks/block-task-tool.sh` alongside `.cursor/hooks/block-subagent.sh`.
+- Kept global managed commands rooted at `~/.cursor/hooks/...` and workspace commands rooted at `.cursor/hooks/...`.
+- Moved managed project rule installation behind an optional workspace checkbox, disabled by default.
+- Updated status checks, sidebar details, and generated `.gitignore` handling for the two-script hook setup.
+
+### 한국어
+
+- 기본 차단 방식을 hooks-only로 변경했습니다. managed 설치는 이제 `Task`용 `preToolUse`와 `subagentStart`를 함께 작성합니다.
+- `.cursor/hooks/block-subagent.sh`와 함께 두 번째 managed hook script인 `.cursor/hooks/block-task-tool.sh`를 추가했습니다.
+- 전역 managed command는 `~/.cursor/hooks/...`, workspace command는 기존처럼 `.cursor/hooks/...` 경로를 사용합니다.
+- managed project rule 설치는 기본 비활성 상태의 workspace 체크박스 옵션으로 분리했습니다.
+- 두 스크립트 hook 구성에 맞춰 상태 확인, 사이드바 표시, 생성 파일 `.gitignore` 처리를 업데이트했습니다.
+
 ## 0.1.7 - 2026-04-22
 
 ### English

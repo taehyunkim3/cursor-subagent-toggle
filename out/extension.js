@@ -41,24 +41,44 @@ const os = __importStar(require("os"));
 const path = __importStar(require("path"));
 const vscode = __importStar(require("vscode"));
 const GLOBAL_COMMAND = 'bash ~/.cursor/hooks/block-subagent.sh';
+const GLOBAL_TASK_COMMAND = 'bash ~/.cursor/hooks/block-task-tool.sh';
 const LEGACY_GLOBAL_COMMAND = 'bash hooks/block-subagent.sh';
+const LEGACY_GLOBAL_TASK_COMMAND = 'bash hooks/block-task-tool.sh';
 const PROJECT_COMMAND = 'bash .cursor/hooks/block-subagent.sh';
+const PROJECT_TASK_COMMAND = 'bash .cursor/hooks/block-task-tool.sh';
 const MANAGED_RULE_FILE_NAME = 'cursor-subagent-toggle.mdc';
 const MANAGED_RULE_GITIGNORE_ENTRY = `.cursor/rules/${MANAGED_RULE_FILE_NAME}`;
 const MANAGED_SCRIPT_GITIGNORE_ENTRY = '.cursor/hooks/block-subagent.sh';
-const MANAGED_GITIGNORE_ENTRIES = [MANAGED_RULE_GITIGNORE_ENTRY, MANAGED_SCRIPT_GITIGNORE_ENTRY];
+const MANAGED_TASK_SCRIPT_GITIGNORE_ENTRY = '.cursor/hooks/block-task-tool.sh';
+const MANAGED_GITIGNORE_ENTRIES = [
+    MANAGED_SCRIPT_GITIGNORE_ENTRY,
+    MANAGED_TASK_SCRIPT_GITIGNORE_ENTRY,
+    MANAGED_RULE_GITIGNORE_ENTRY
+];
 const MANAGED_GITIGNORE_START = '# Cursor Subagent Toggle: managed generated files';
 const HOOKS_JSON_GITIGNORE_ENTRY = '.cursor/hooks.json';
 const HOOKS_JSON_GITIGNORE_START = '# Cursor Subagent Toggle: hooks config ignore';
 const MANAGED_GITIGNORE_END = '# End Cursor Subagent Toggle';
 const BLOCKER_SCRIPT = `#!/bin/bash
-
-# Return a deny decision for Cursor's subagent hook.
-echo '{"decision": "deny", "permission": "deny"}'
-
-# Exit code 2 force-stops the subagent creation flow.
-echo "Subagent creation is BLOCKED by Cursor Subagent Toggle." >&2
-exit 2
+# Deny all subagent creation unconditionally.
+# Uses exit-0 + JSON permission:deny (the canonical deny pattern).
+cat <<'EOF'
+{
+  "permission": "deny",
+  "user_message": "서브에이전트 사용이 훅에 의해 차단되었습니다. 도구를 직접 호출하세요."
+}
+EOF
+exit 0
+`;
+const TASK_BLOCKER_SCRIPT = `#!/bin/bash
+cat <<'EOF'
+{
+  "permission": "deny",
+  "user_message": "Task(서브에이전트) 도구 호출이 차단되었습니다.",
+  "agent_message": "Task tool is BLOCKED. You MUST NOT use the Task tool. Instead, directly use Grep, Glob, SemanticSearch, Read, Shell, StrReplace, Write, and other tools yourself. Batch multiple tool calls in a single message for parallelism."
+}
+EOF
+exit 0
 `;
 const MANAGED_RULE = `---
 description: CRITICAL - Strictly prevents all subagent usage.
@@ -88,6 +108,7 @@ Do all work directly by yourself:
 `;
 const LANGUAGE_KEY = 'uiLanguage';
 const GITIGNORE_PREF_PREFIX = 'gitignoreManagedRule:';
+const RULE_PREF_PREFIX = 'managedRuleEnabled:';
 const STATUS_META = {
     enabled: { icon: '🟢', label: 'ON' },
     blocked: { icon: '🔴', label: 'OFF' },
@@ -122,13 +143,18 @@ const STRINGS = {
         statusError: 'Error',
         configExists: 'hooks.json',
         scriptExists: 'blocker script',
+        taskScriptExists: 'Task blocker script',
         ruleExists: 'project rule',
         ruleManaged: 'rule content',
         ruleManagedValue: 'Managed',
         ruleMissingValue: 'Missing',
         ruleModifiedValue: 'Modified - protected',
+        ruleDisabledValue: 'Optional - off',
+        optionalRule: 'Also install managed project rule',
+        optionalRuleHelp: 'Adds the managed Cursor rule only when this checkbox is on. Hooks remain the default blocker.',
+        optionalRuleDone: '{name}: managed project rule option was updated.',
         gitignoreRule: 'Ignore generated blocker files in git',
-        gitignoreRuleHelp: 'Adds only .cursor/rules/cursor-subagent-toggle.mdc and .cursor/hooks/block-subagent.sh to this workspace .gitignore.',
+        gitignoreRuleHelp: 'Adds only .cursor/hooks/block-subagent.sh, .cursor/hooks/block-task-tool.sh, and the optional managed rule path to this workspace .gitignore.',
         gitignoreStatus: '.gitignore',
         gitignoreEnabledValue: 'Enabled',
         gitignoreDisabledValue: 'Disabled',
@@ -142,7 +168,7 @@ const STRINGS = {
         no: 'Missing',
         customDetected: 'Custom subagentStart hooks were detected.',
         recommended: 'Apply Recommended Config',
-        recommendedHelp: 'This replaces only hooks.subagentStart and recreates the extension-managed guard files.',
+        recommendedHelp: 'This replaces only the managed Task and subagent hook arrays and recreates the extension-managed guard files.',
         ruleWarningTitle: 'Managed project rule needs attention.',
         ruleWarningHelp: 'The hook can still block subagents, but the project rule is missing or was edited. Existing user rules are not touched.',
         restoreRule: 'Restore Project Rule',
@@ -152,9 +178,9 @@ const STRINGS = {
         enabledSwitchHelp: 'Switch on to allow subagent creation in this scope.',
         overriddenByGlobal: 'Global blocker is ON, so final status remains blocked in this folder.',
         globalNotification: 'Global subagent status',
-        recommendedGlobalDone: 'Global subagentStart was replaced with the recommended blocker config.',
-        recommendedWorkspaceDone: '{name}: subagentStart was replaced with the recommended blocker config.',
-        unknownConfirm: 'Custom subagentStart hooks were detected in {path}. Replace only hooks.subagentStart with the recommended blocker config?',
+        recommendedGlobalDone: 'Global hooks were replaced with the recommended blocker config.',
+        recommendedWorkspaceDone: '{name}: hooks were replaced with the recommended blocker config.',
+        unknownConfirm: 'Custom or partial managed hooks were detected in {path}. Replace only the Task and subagent hook arrays with the recommended blocker config?',
         activeFolderMissing: 'No active workspace folder was found to toggle.',
         noFolders: 'This window does not have any workspace folders.',
         chooseFolder: 'Choose a workspace folder',
@@ -196,13 +222,18 @@ const STRINGS = {
         statusError: '오류',
         configExists: 'hooks.json',
         scriptExists: '차단 스크립트',
+        taskScriptExists: 'Task 차단 스크립트',
         ruleExists: 'project rule',
         ruleManaged: 'rule 내용',
         ruleManagedValue: '관리됨',
         ruleMissingValue: '없음',
         ruleModifiedValue: '수정됨 - 보호',
+        ruleDisabledValue: '선택 기능 - 꺼짐',
+        optionalRule: '관리 project rule도 함께 설치',
+        optionalRuleHelp: '이 체크박스가 켜져 있을 때만 관리 Cursor rule을 추가합니다. 기본 차단은 hooks만 사용합니다.',
+        optionalRuleDone: '{name}: 관리 project rule 옵션을 업데이트했습니다.',
         gitignoreRule: '생성된 blocker 파일을 git에서 무시',
-        gitignoreRuleHelp: '이 workspace .gitignore에 .cursor/rules/cursor-subagent-toggle.mdc 및 .cursor/hooks/block-subagent.sh 파일만 추가합니다.',
+        gitignoreRuleHelp: '이 workspace .gitignore에 .cursor/hooks/block-subagent.sh, .cursor/hooks/block-task-tool.sh 및 선택 관리 rule 경로만 추가합니다.',
         gitignoreStatus: '.gitignore',
         gitignoreEnabledValue: '활성',
         gitignoreDisabledValue: '비활성',
@@ -216,7 +247,7 @@ const STRINGS = {
         no: '없음',
         customDetected: '커스텀 subagentStart hook이 감지되었습니다.',
         recommended: '권장 설정 적용',
-        recommendedHelp: 'hooks.subagentStart만 교체하고 extension이 관리하는 guard 파일을 다시 생성합니다.',
+        recommendedHelp: '관리 대상 Task hook과 subagent hook 배열만 교체하고 extension 관리 guard 파일을 다시 생성합니다.',
         ruleWarningTitle: '관리 project rule 확인이 필요합니다.',
         ruleWarningHelp: 'hook은 subagent를 계속 차단할 수 있지만, project rule이 없거나 수정되었습니다. 기존 사용자 rule은 건드리지 않습니다.',
         restoreRule: 'Project Rule 복구',
@@ -226,9 +257,9 @@ const STRINGS = {
         enabledSwitchHelp: '스위치를 켜면 이 범위에서 subagent 생성이 허용됩니다.',
         overriddenByGlobal: '전역 차단이 켜져 있어서 이 폴더의 최종 상태는 비활성으로 유지됩니다.',
         globalNotification: '전역 subagent 상태',
-        recommendedGlobalDone: '전역 subagentStart를 권장 blocker 설정으로 교체했습니다.',
-        recommendedWorkspaceDone: '{name}: subagentStart를 권장 blocker 설정으로 교체했습니다.',
-        unknownConfirm: '{path} 에 커스텀 subagentStart hook이 있습니다. hooks.subagentStart만 권장 blocker 설정으로 교체할까요?',
+        recommendedGlobalDone: '전역 hooks를 권장 blocker 설정으로 교체했습니다.',
+        recommendedWorkspaceDone: '{name}: hooks를 권장 blocker 설정으로 교체했습니다.',
+        unknownConfirm: '{path} 에 커스텀 또는 일부 managed hook이 있습니다. Task hook과 subagent hook 배열만 권장 blocker 설정으로 교체할까요?',
         activeFolderMissing: '토글할 활성 workspace folder를 찾지 못했습니다.',
         noFolders: '이 창에는 workspace folder가 없습니다.',
         chooseFolder: 'workspace folder 선택',
@@ -286,6 +317,7 @@ class SubagentController {
     registerWorkspaceWatchers() {
         const hookWatcher = vscode.workspace.createFileSystemWatcher('**/.cursor/hooks.json');
         const scriptWatcher = vscode.workspace.createFileSystemWatcher('**/.cursor/hooks/block-subagent.sh');
+        const taskScriptWatcher = vscode.workspace.createFileSystemWatcher('**/.cursor/hooks/block-task-tool.sh');
         const ruleWatcher = vscode.workspace.createFileSystemWatcher(`**/.cursor/rules/${MANAGED_RULE_FILE_NAME}`);
         const gitignoreWatcher = vscode.workspace.createFileSystemWatcher('**/.gitignore');
         const triggerRefresh = () => this.scheduleRefresh();
@@ -295,19 +327,22 @@ class SubagentController {
         scriptWatcher.onDidCreate(triggerRefresh, this, this.context.subscriptions);
         scriptWatcher.onDidChange(triggerRefresh, this, this.context.subscriptions);
         scriptWatcher.onDidDelete(triggerRefresh, this, this.context.subscriptions);
+        taskScriptWatcher.onDidCreate(triggerRefresh, this, this.context.subscriptions);
+        taskScriptWatcher.onDidChange(triggerRefresh, this, this.context.subscriptions);
+        taskScriptWatcher.onDidDelete(triggerRefresh, this, this.context.subscriptions);
         ruleWatcher.onDidCreate(triggerRefresh, this, this.context.subscriptions);
         ruleWatcher.onDidChange(triggerRefresh, this, this.context.subscriptions);
         ruleWatcher.onDidDelete(triggerRefresh, this, this.context.subscriptions);
         gitignoreWatcher.onDidCreate(triggerRefresh, this, this.context.subscriptions);
         gitignoreWatcher.onDidChange(triggerRefresh, this, this.context.subscriptions);
         gitignoreWatcher.onDidDelete(triggerRefresh, this, this.context.subscriptions);
-        this.context.subscriptions.push(hookWatcher, scriptWatcher, ruleWatcher, gitignoreWatcher, vscode.workspace.onDidChangeWorkspaceFolders(() => {
+        this.context.subscriptions.push(hookWatcher, scriptWatcher, taskScriptWatcher, ruleWatcher, gitignoreWatcher, vscode.workspace.onDidChangeWorkspaceFolders(() => {
             void this.refresh();
         }), vscode.window.onDidChangeActiveTextEditor(() => this.renderStatusBar()));
     }
     registerGlobalWatchers() {
         this.handleGlobalWatchChange = () => this.scheduleRefresh();
-        this.globalWatchTargets = [getGlobalHooksJsonPath(), getGlobalScriptPath()];
+        this.globalWatchTargets = [getGlobalHooksJsonPath(), getGlobalScriptPath(), getGlobalTaskScriptPath()];
         for (const target of this.globalWatchTargets) {
             fs.watchFile(target, { interval: 1000 }, this.handleGlobalWatchChange);
         }
@@ -402,6 +437,13 @@ class SubagentController {
                 }
                 break;
             }
+            case 'toggleWorkspaceRule': {
+                const workspaceState = this.findWorkspaceState(message.folderUri);
+                if (workspaceState) {
+                    await this.setWorkspaceRuleEnabled(workspaceState, message.enabled);
+                }
+                break;
+            }
             case 'toggleWorkspaceGitignore': {
                 const workspaceState = this.findWorkspaceState(message.folderUri);
                 if (workspaceState) {
@@ -420,6 +462,9 @@ class SubagentController {
     }
     getWorkspaceGitignoreEnabled(folderUri) {
         return this.context.workspaceState.get(getGitignorePreferenceKey(folderUri), true);
+    }
+    getWorkspaceRuleEnabled(folderUri) {
+        return this.context.workspaceState.get(getRulePreferenceKey(folderUri), false);
     }
     renderStatusBar() {
         const snapshot = this.getSnapshot();
@@ -606,8 +651,9 @@ class SubagentController {
             shouldBlock = workspaceState.local.status !== 'blocked';
             await setManagedBlock(workspaceState.local, shouldBlock);
         }
-        await this.restoreGlobalRuleIfNeeded(workspaceState.local);
-        await this.syncGitignoreForRulePresence(workspaceState, shouldBlock || this.getSnapshot().globalScope.status === 'blocked');
+        const effectiveShouldBlock = shouldBlock || this.getSnapshot().globalScope.status === 'blocked';
+        await this.syncOptionalWorkspaceRule(workspaceState, effectiveShouldBlock);
+        await this.syncGitignoreForRulePresence(workspaceState, effectiveShouldBlock);
         await this.refresh(true);
         const updatedState = this.findWorkspaceState(workspaceState.folder.uri.toString());
         if (!updatedState) {
@@ -637,8 +683,9 @@ class SubagentController {
             shouldBlock = !desiredEnabled;
             await setManagedBlock(workspaceState.local, shouldBlock);
         }
-        await this.restoreGlobalRuleIfNeeded(workspaceState.local);
-        await this.syncGitignoreForRulePresence(workspaceState, shouldBlock || this.getSnapshot().globalScope.status === 'blocked');
+        const effectiveShouldBlock = shouldBlock || this.getSnapshot().globalScope.status === 'blocked';
+        await this.syncOptionalWorkspaceRule(workspaceState, effectiveShouldBlock);
+        await this.syncGitignoreForRulePresence(workspaceState, effectiveShouldBlock);
         await this.refresh(true);
     }
     async applyRecommendedGlobal() {
@@ -674,6 +721,7 @@ class SubagentController {
         else {
             const workspaceState = this.findWorkspaceState(scope.folder?.uri.toString() ?? '');
             if (workspaceState) {
+                await this.syncOptionalWorkspaceRule(workspaceState, true);
                 await this.syncGitignoreForRulePresence(workspaceState, true);
             }
         }
@@ -686,15 +734,33 @@ class SubagentController {
         vscode.window.showInformationMessage(interpolate(strings.recommendedWorkspaceDone, { name: scope.name }));
     }
     async restoreWorkspaceRule(workspaceState) {
+        await this.context.workspaceState.update(getRulePreferenceKey(workspaceState.folder.uri.toString()), true);
         await ensureManagedRule(workspaceState.local.rulePath);
         await this.syncGitignoreForRulePresence(workspaceState, true);
         await this.refresh(true);
         vscode.window.showInformationMessage(interpolate(STRINGS[this.getLanguage()].restoreRuleDone, { name: workspaceState.folder.name }));
     }
-    async restoreGlobalRuleIfNeeded(scope) {
-        if (this.getSnapshot().globalScope.status === 'blocked') {
-            await ensureManagedRule(scope.rulePath);
+    async setWorkspaceRuleEnabled(workspaceState, enabled) {
+        const folderUri = workspaceState.folder.uri.toString();
+        await this.context.workspaceState.update(getRulePreferenceKey(folderUri), enabled);
+        const shouldHaveRule = enabled && workspaceState.status === 'blocked';
+        if (shouldHaveRule) {
+            await ensureManagedRule(workspaceState.local.rulePath);
+            await this.syncGitignoreForRulePresence(workspaceState, true);
         }
+        else {
+            await deleteManagedRule(workspaceState.local.rulePath);
+            await this.syncGitignoreForRulePresence(workspaceState, workspaceState.local.status === 'blocked');
+        }
+        await this.refresh(true);
+        vscode.window.showInformationMessage(interpolate(STRINGS[this.getLanguage()].optionalRuleDone, { name: workspaceState.folder.name }));
+    }
+    async syncOptionalWorkspaceRule(workspaceState, shouldBlock) {
+        if (this.getWorkspaceRuleEnabled(workspaceState.folder.uri.toString()) && shouldBlock) {
+            await ensureManagedRule(workspaceState.local.rulePath);
+            return;
+        }
+        await deleteManagedRule(workspaceState.local.rulePath);
     }
     async setWorkspaceGitignoreEnabled(workspaceState, enabled) {
         const folderUri = workspaceState.folder.uri.toString();
@@ -731,10 +797,12 @@ class SubagentController {
         const scopes = await Promise.all(folders.map((folder) => inspectProjectScope(folder)));
         if (shouldBlock) {
             await Promise.all(scopes.map(async (scope) => {
-                await ensureManagedRule(scope.rulePath);
                 const workspaceState = this.getWorkspaceStateForScope(scope);
                 if (workspaceState) {
-                    await this.syncGitignoreForRulePresence(workspaceState, true);
+                    const shouldSyncGeneratedIgnores = scope.status === 'blocked'
+                        || this.getWorkspaceRuleEnabled(workspaceState.folder.uri.toString());
+                    await this.syncOptionalWorkspaceRule(workspaceState, true);
+                    await this.syncGitignoreForRulePresence(workspaceState, shouldSyncGeneratedIgnores);
                 }
             }));
             return;
@@ -805,15 +873,20 @@ function buildErrorSnapshot(error) {
             baseDir: getGlobalCursorDir(),
             hooksJsonPath: getGlobalHooksJsonPath(),
             scriptPath: getGlobalScriptPath(),
+            taskScriptPath: getGlobalTaskScriptPath(),
             managedCommand: GLOBAL_COMMAND,
+            managedTaskCommand: GLOBAL_TASK_COMMAND,
             configExists: false,
             scriptExists: false,
             scriptLooksLikeBlocker: false,
+            taskScriptExists: false,
+            taskScriptLooksLikeBlocker: false,
             ruleExists: false,
             ruleMatchesManagedRule: false,
             gitignoreExists: false,
             gitignoreHasManagedRuleEntry: false,
             gitignoreHasManagedScriptEntry: false,
+            gitignoreHasManagedTaskScriptEntry: false,
             gitignoreHasAllManagedEntries: false,
             gitignoreHasManagedBlock: false,
             gitignoreHasHooksJsonEntry: false,
@@ -835,8 +908,11 @@ async function inspectGlobalScope() {
         baseDir: getGlobalCursorDir(),
         hooksJsonPath: getGlobalHooksJsonPath(),
         scriptPath: getGlobalScriptPath(),
+        taskScriptPath: getGlobalTaskScriptPath(),
         managedCommand: GLOBAL_COMMAND,
-        legacyManagedCommands: [LEGACY_GLOBAL_COMMAND]
+        managedTaskCommand: GLOBAL_TASK_COMMAND,
+        legacyManagedCommands: [LEGACY_GLOBAL_COMMAND],
+        legacyManagedTaskCommands: [LEGACY_GLOBAL_TASK_COMMAND]
     });
 }
 async function inspectProjectScope(folder) {
@@ -847,14 +923,17 @@ async function inspectProjectScope(folder) {
         baseDir: folder.uri.fsPath,
         hooksJsonPath: path.join(folder.uri.fsPath, '.cursor', 'hooks.json'),
         scriptPath: path.join(folder.uri.fsPath, '.cursor', 'hooks', 'block-subagent.sh'),
+        taskScriptPath: path.join(folder.uri.fsPath, '.cursor', 'hooks', 'block-task-tool.sh'),
         rulePath: getProjectRulePath(folder.uri.fsPath),
         gitignorePath: path.join(folder.uri.fsPath, '.gitignore'),
-        managedCommand: PROJECT_COMMAND
+        managedCommand: PROJECT_COMMAND,
+        managedTaskCommand: PROJECT_TASK_COMMAND
     });
 }
 async function inspectScope(scope) {
     const configState = await readJsonFile(scope.hooksJsonPath);
     const scriptState = await readScriptFile(scope.scriptPath);
+    const taskScriptState = await readScriptFile(scope.taskScriptPath);
     const ruleState = await readRuleFile(scope.rulePath);
     const gitignoreState = await readGitignoreFile(scope.gitignorePath);
     const base = {
@@ -862,11 +941,14 @@ async function inspectScope(scope) {
         configExists: configState.exists,
         scriptExists: scriptState.exists,
         scriptLooksLikeBlocker: scriptState.looksLikeBlocker,
+        taskScriptExists: taskScriptState.exists,
+        taskScriptLooksLikeBlocker: taskScriptState.looksLikeBlocker,
         ruleExists: ruleState.exists,
         ruleMatchesManagedRule: ruleState.matchesManagedRule,
         gitignoreExists: gitignoreState.exists,
         gitignoreHasManagedRuleEntry: gitignoreState.hasManagedRuleEntry,
         gitignoreHasManagedScriptEntry: gitignoreState.hasManagedScriptEntry,
+        gitignoreHasManagedTaskScriptEntry: gitignoreState.hasManagedTaskScriptEntry,
         gitignoreHasAllManagedEntries: gitignoreState.hasAllManagedEntries,
         gitignoreHasManagedBlock: gitignoreState.hasManagedBlock,
         gitignoreHasHooksJsonEntry: gitignoreState.hasHooksJsonEntry,
@@ -881,7 +963,15 @@ async function inspectScope(scope) {
     }
     const hooksConfig = configState.data;
     const hooksRoot = isObject(hooksConfig) && isObject(hooksConfig.hooks) ? hooksConfig.hooks : undefined;
+    const preToolUseHooks = hooksRoot?.preToolUse;
     const subagentHooks = hooksRoot?.subagentStart;
+    if (preToolUseHooks !== undefined && !Array.isArray(preToolUseHooks)) {
+        return {
+            ...base,
+            status: 'error',
+            reason: `preToolUse must be an array in ${formatShortPath(scope.hooksJsonPath)}`
+        };
+    }
     if (subagentHooks !== undefined && !Array.isArray(subagentHooks)) {
         return {
             ...base,
@@ -890,21 +980,23 @@ async function inspectScope(scope) {
         };
     }
     const hookEntries = Array.isArray(subagentHooks) ? subagentHooks : [];
+    const taskHookEntries = Array.isArray(preToolUseHooks) ? preToolUseHooks : [];
     const commandEntries = hookEntries.map((entry, index) => ({
         index,
         command: isCommandEntry(entry) ? entry.command : undefined
     }));
+    const taskCommandEntries = taskHookEntries.map((entry, index) => ({
+        index,
+        command: isCommandEntry(entry) ? entry.command : undefined
+    }));
     const managedCommands = getManagedCommands(scope);
+    const managedTaskCommands = getManagedTaskCommands(scope);
     const managedIndex = commandEntries.findIndex((entry) => entry.command !== undefined && managedCommands.includes(entry.command));
+    const managedTaskIndex = taskCommandEntries.findIndex((entry) => entry.command !== undefined && managedTaskCommands.includes(entry.command));
     const hasAnySubagentHooks = hookEntries.length > 0;
     const hasCustomCommands = commandEntries.some((entry) => entry.command && !managedCommands.includes(entry.command));
     const hasInvalidEntries = hookEntries.some((entry) => !isCommandEntry(entry));
-    const ruleIssue = scope.rulePath && !ruleState.exists
-        ? 'the managed project rule is missing'
-        : scope.rulePath && ruleState.exists && !ruleState.matchesManagedRule
-            ? 'the managed project rule was edited and is protected'
-            : undefined;
-    if (managedIndex === 0) {
+    if (managedIndex === 0 && managedTaskIndex === 0) {
         if (!scriptState.exists) {
             return {
                 ...base,
@@ -919,17 +1011,38 @@ async function inspectScope(scope) {
                 reason: `Managed blocker command exists, but ${formatShortPath(scope.scriptPath)} no longer matches the expected deny helper`
             };
         }
+        if (!taskScriptState.exists) {
+            return {
+                ...base,
+                status: 'error',
+                reason: `Managed Task blocker is configured, but ${formatShortPath(scope.taskScriptPath)} is missing`
+            };
+        }
+        if (!taskScriptState.looksLikeBlocker) {
+            return {
+                ...base,
+                status: 'unknown',
+                reason: `Managed Task blocker command exists, but ${formatShortPath(scope.taskScriptPath)} no longer matches the expected deny helper`
+            };
+        }
         return {
             ...base,
             status: 'blocked',
-            reason: ruleIssue ? `Managed blocker is active, but ${ruleIssue}` : 'Managed blocker is active'
+            reason: 'Managed blocker is active'
         };
     }
-    if (managedIndex > 0) {
+    if (managedIndex >= 0 || managedTaskIndex >= 0) {
+        if (managedIndex > 0 || managedTaskIndex > 0) {
+            return {
+                ...base,
+                status: 'unknown',
+                reason: 'Managed blocker exists, but it is not the first managed hook'
+            };
+        }
         return {
             ...base,
             status: 'unknown',
-            reason: 'Managed blocker exists, but it is not the first subagentStart hook'
+            reason: 'Only part of the recommended managed hook pair is configured'
         };
     }
     if (hasInvalidEntries) {
@@ -1044,23 +1157,22 @@ function summarizeWorkspaceState(globalScope, workspaceStates) {
 async function setManagedBlock(scope, shouldBlock) {
     const data = await loadEditableHooksConfig(scope.hooksJsonPath);
     const existing = Array.isArray(data.hooks.subagentStart) ? [...data.hooks.subagentStart] : [];
+    const existingTaskHooks = Array.isArray(data.hooks.preToolUse) ? [...data.hooks.preToolUse] : [];
     const managedCommands = getManagedCommands(scope);
+    const managedTaskCommands = getManagedTaskCommands(scope);
     const withoutManaged = existing.filter((entry) => !managedCommands.includes(entry.command));
+    const withoutManagedTaskHooks = existingTaskHooks.filter((entry) => !managedTaskCommands.includes(entry.command));
     if (shouldBlock) {
-        withoutManaged.unshift({ command: scope.managedCommand });
-        await ensureManagedScript(scope.scriptPath);
-        await ensureManagedRule(scope.rulePath);
+        withoutManaged.unshift({ command: scope.managedCommand, failClosed: true });
+        withoutManagedTaskHooks.unshift({ command: scope.managedTaskCommand, matcher: 'Task', failClosed: true });
+        await ensureManagedScripts(scope);
     }
-    else {
-        await deleteManagedRule(scope.rulePath);
-    }
-    await writeSubagentStart(scope.hooksJsonPath, data, withoutManaged.length > 0 ? withoutManaged : undefined);
+    await writeManagedHookArrays(scope.hooksJsonPath, data, withoutManagedTaskHooks.length > 0 ? withoutManagedTaskHooks : undefined, withoutManaged.length > 0 ? withoutManaged : undefined);
 }
 async function applyRecommendedBlock(scope) {
     const data = await loadEditableHooksConfig(scope.hooksJsonPath);
-    await ensureManagedScript(scope.scriptPath);
-    await ensureManagedRule(scope.rulePath);
-    await writeSubagentStart(scope.hooksJsonPath, data, [{ command: scope.managedCommand }]);
+    await ensureManagedScripts(scope);
+    await writeManagedHookArrays(scope.hooksJsonPath, data, [{ command: scope.managedTaskCommand, matcher: 'Task', failClosed: true }], [{ command: scope.managedCommand, failClosed: true }]);
 }
 async function loadEditableHooksConfig(hooksJsonPath) {
     const configState = await readJsonFile(hooksJsonPath);
@@ -1071,13 +1183,22 @@ async function loadEditableHooksConfig(hooksJsonPath) {
         if (!isObject(configState.data.hooks)) {
             throw new Error(`Fix invalid hooks object first: ${formatShortPath(hooksJsonPath)}`);
         }
+        if (configState.data.hooks.preToolUse !== undefined && !Array.isArray(configState.data.hooks.preToolUse)) {
+            throw new Error(`Fix invalid preToolUse first: ${formatShortPath(hooksJsonPath)}`);
+        }
         if (configState.data.hooks.subagentStart !== undefined && !Array.isArray(configState.data.hooks.subagentStart)) {
             throw new Error(`Fix invalid subagentStart first: ${formatShortPath(hooksJsonPath)}`);
         }
     }
     return normalizeHooksConfig(configState.data);
 }
-async function writeSubagentStart(hooksJsonPath, config, subagentStart) {
+async function writeManagedHookArrays(hooksJsonPath, config, preToolUse, subagentStart) {
+    if (preToolUse && preToolUse.length > 0) {
+        config.hooks.preToolUse = preToolUse;
+    }
+    else {
+        delete config.hooks.preToolUse;
+    }
     if (subagentStart && subagentStart.length > 0) {
         config.hooks.subagentStart = subagentStart;
     }
@@ -1099,9 +1220,18 @@ function normalizeHooksConfig(input) {
 function getManagedCommands(scope) {
     return [scope.managedCommand, ...(scope.legacyManagedCommands ?? [])];
 }
-async function ensureManagedScript(scriptPath) {
+function getManagedTaskCommands(scope) {
+    return [scope.managedTaskCommand, ...(scope.legacyManagedTaskCommands ?? [])];
+}
+async function ensureManagedScripts(scope) {
+    await Promise.all([
+        ensureManagedScript(scope.scriptPath, BLOCKER_SCRIPT),
+        ensureManagedScript(scope.taskScriptPath, TASK_BLOCKER_SCRIPT)
+    ]);
+}
+async function ensureManagedScript(scriptPath, contents) {
     await fsp.mkdir(path.dirname(scriptPath), { recursive: true });
-    await fsp.writeFile(scriptPath, BLOCKER_SCRIPT, 'utf8');
+    await fsp.writeFile(scriptPath, contents, 'utf8');
     await fsp.chmod(scriptPath, 0o755);
 }
 async function ensureManagedRule(rulePath) {
@@ -1224,6 +1354,7 @@ async function readGitignoreFile(filePath) {
             exists: false,
             hasManagedRuleEntry: false,
             hasManagedScriptEntry: false,
+            hasManagedTaskScriptEntry: false,
             hasAllManagedEntries: false,
             hasManagedBlock: false,
             hasHooksJsonEntry: false,
@@ -1236,6 +1367,7 @@ async function readGitignoreFile(filePath) {
             exists: false,
             hasManagedRuleEntry: false,
             hasManagedScriptEntry: false,
+            hasManagedTaskScriptEntry: false,
             hasAllManagedEntries: false,
             hasManagedBlock: false,
             hasHooksJsonEntry: false,
@@ -1278,9 +1410,8 @@ async function readScriptFile(filePath) {
         const normalized = raw.replace(/\r\n/g, '\n');
         return {
             exists: true,
-            looksLikeBlocker: normalized.includes('"decision": "deny"')
-                && normalized.includes('"permission": "deny"')
-                && normalized.includes('exit 2')
+            looksLikeBlocker: normalized.includes('"permission": "deny"')
+                && (normalized.includes('exit 0') || normalized.includes('exit 2'))
         };
     }
     catch (error) {
@@ -1376,7 +1507,8 @@ function renderSidebarHtml(webview, snapshot, language, controller) {
         effectiveReason: state.reason,
         globalStatus: state.global.status,
         globalReason: state.global.reason,
-        gitignorePreferenceEnabled: controller.getWorkspaceGitignoreEnabled(state.folder.uri.toString())
+        gitignorePreferenceEnabled: controller.getWorkspaceGitignoreEnabled(state.folder.uri.toString()),
+        rulePreferenceEnabled: controller.getWorkspaceRuleEnabled(state.folder.uri.toString())
     })).join('');
     return `<!DOCTYPE html>
 <html lang="${language}">
@@ -1698,6 +1830,13 @@ function renderSidebarHtml(webview, snapshot, language, controller) {
     document.querySelectorAll('[data-action="restore-workspace-rule"]').forEach((button) => {
       button.addEventListener('click', () => vscode.postMessage({ type: 'restoreWorkspaceRule', folderUri: button.dataset.folderUri }));
     });
+    document.querySelectorAll('[data-action="toggle-workspace-rule"]').forEach((input) => {
+      input.addEventListener('change', (event) => vscode.postMessage({
+        type: 'toggleWorkspaceRule',
+        folderUri: input.dataset.folderUri,
+        enabled: event.target.checked
+      }));
+    });
     document.querySelectorAll('[data-action="toggle-workspace-gitignore"]').forEach((input) => {
       input.addEventListener('change', (event) => vscode.postMessage({
         type: 'toggleWorkspaceGitignore',
@@ -1733,7 +1872,7 @@ function renderScopeCard(scope, options) {
         && scope.status !== 'blocked');
     const toggleAction = options.folderUri ? 'toggle-workspace' : 'toggle-global';
     const recommendedAction = options.folderUri ? 'recommended-workspace' : 'recommended-global';
-    const hasRuleWarning = hasManagedRuleWarning(scope, options.effectiveStatus);
+    const hasRuleWarning = Boolean(options.rulePreferenceEnabled) && hasManagedRuleWarning(scope, options.effectiveStatus);
     return `<article class="card">
     <div class="card-header">
       <div>
@@ -1755,6 +1894,13 @@ function renderScopeCard(scope, options) {
     </div>
 
     ${options.folderUri ? `<label class="checkbox-row">
+      <input type="checkbox" data-action="toggle-workspace-rule" data-folder-uri="${escapeHtmlAttribute(options.folderUri)}"${options.rulePreferenceEnabled ? ' checked' : ''}>
+      <span class="switch-copy">
+        <strong>${escapeHtml(strings.optionalRule)}</strong>
+        <span class="hint">${escapeHtml(strings.optionalRuleHelp)}</span>
+      </span>
+    </label>
+    <label class="checkbox-row">
       <input type="checkbox" data-action="toggle-workspace-gitignore" data-folder-uri="${escapeHtmlAttribute(options.folderUri)}"${scope.gitignoreHasAllManagedEntries ? ' checked' : ''}>
       <span class="switch-copy">
         <strong>${escapeHtml(strings.gitignoreRule)}</strong>
@@ -1798,9 +1944,13 @@ function renderScopeCard(scope, options) {
         <div class="label">${escapeHtml(strings.scriptExists)}</div>
         <div class="value">${escapeHtml(scope.scriptExists ? strings.yes : strings.no)}</div>
       </div>
+      <div class="row">
+        <div class="label">${escapeHtml(strings.taskScriptExists)}</div>
+        <div class="value">${escapeHtml(scope.taskScriptExists ? strings.yes : strings.no)}</div>
+      </div>
       ${scope.rulePath ? `<div class="row">
         <div class="label">${escapeHtml(strings.ruleExists)}</div>
-        <div class="value">${escapeHtml(formatRuleStatus(scope, options.language))}</div>
+        <div class="value">${escapeHtml(formatRuleStatus(scope, options.language, options.rulePreferenceEnabled === true))}</div>
       </div>
       <div class="row">
         <div class="label">${escapeHtml(strings.gitignoreStatus)}</div>
@@ -1853,8 +2003,11 @@ function hasManagedRuleWarning(scope, effectiveStatus) {
         && effectiveStatus === 'blocked'
         && (!scope.ruleExists || !scope.ruleMatchesManagedRule));
 }
-function formatRuleStatus(scope, language) {
+function formatRuleStatus(scope, language, rulePreferenceEnabled = true) {
     const strings = STRINGS[language];
+    if (!rulePreferenceEnabled && !scope.ruleExists) {
+        return strings.ruleDisabledValue;
+    }
     if (!scope.ruleExists) {
         return strings.ruleMissingValue;
     }
@@ -1896,11 +2049,17 @@ function getGlobalHooksJsonPath() {
 function getGlobalScriptPath() {
     return path.join(getGlobalCursorDir(), 'hooks', 'block-subagent.sh');
 }
+function getGlobalTaskScriptPath() {
+    return path.join(getGlobalCursorDir(), 'hooks', 'block-task-tool.sh');
+}
 function getProjectRulePath(baseDir) {
     return path.join(baseDir, '.cursor', 'rules', MANAGED_RULE_FILE_NAME);
 }
 function getGitignorePreferenceKey(folderUri) {
     return `${GITIGNORE_PREF_PREFIX}${folderUri}`;
+}
+function getRulePreferenceKey(folderUri) {
+    return `${RULE_PREF_PREFIX}${folderUri}`;
 }
 function normalizeLineEndings(value) {
     return value.replace(/\r\n/g, '\n');
@@ -1909,11 +2068,13 @@ function parseGitignoreState(raw) {
     const lines = normalizeLineEndings(raw).split('\n').map((line) => line.trim());
     const hasManagedRuleEntry = lines.includes(MANAGED_RULE_GITIGNORE_ENTRY);
     const hasManagedScriptEntry = lines.includes(MANAGED_SCRIPT_GITIGNORE_ENTRY);
+    const hasManagedTaskScriptEntry = lines.includes(MANAGED_TASK_SCRIPT_GITIGNORE_ENTRY);
     const hasHooksJsonEntry = lines.includes(HOOKS_JSON_GITIGNORE_ENTRY);
     return {
         hasManagedRuleEntry,
         hasManagedScriptEntry,
-        hasAllManagedEntries: hasManagedRuleEntry && hasManagedScriptEntry,
+        hasManagedTaskScriptEntry,
+        hasAllManagedEntries: hasManagedRuleEntry && hasManagedScriptEntry && hasManagedTaskScriptEntry,
         hasManagedBlock: lines.includes(MANAGED_GITIGNORE_START) && lines.includes(MANAGED_GITIGNORE_END),
         hasHooksJsonEntry,
         hasHooksJsonBlock: lines.includes(HOOKS_JSON_GITIGNORE_START) && lines.includes(MANAGED_GITIGNORE_END)
