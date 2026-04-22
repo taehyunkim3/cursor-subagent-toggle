@@ -4,7 +4,8 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
-const GLOBAL_COMMAND = 'bash hooks/block-subagent.sh';
+const GLOBAL_COMMAND = 'bash ~/.cursor/hooks/block-subagent.sh';
+const LEGACY_GLOBAL_COMMAND = 'bash hooks/block-subagent.sh';
 const PROJECT_COMMAND = 'bash .cursor/hooks/block-subagent.sh';
 const MANAGED_RULE_FILE_NAME = 'cursor-subagent-toggle.mdc';
 const MANAGED_RULE_GITIGNORE_ENTRY = `.cursor/rules/${MANAGED_RULE_FILE_NAME}`;
@@ -115,6 +116,7 @@ interface ScopeDescriptor {
   rulePath?: string;
   gitignorePath?: string;
   managedCommand: string;
+  legacyManagedCommands?: string[];
   folder?: vscode.WorkspaceFolder;
 }
 
@@ -1041,7 +1043,8 @@ async function inspectGlobalScope(): Promise<ScopeState> {
     baseDir: getGlobalCursorDir(),
     hooksJsonPath: getGlobalHooksJsonPath(),
     scriptPath: getGlobalScriptPath(),
-    managedCommand: GLOBAL_COMMAND
+    managedCommand: GLOBAL_COMMAND,
+    legacyManagedCommands: [LEGACY_GLOBAL_COMMAND]
   });
 }
 
@@ -1105,9 +1108,10 @@ async function inspectScope(scope: ScopeDescriptor): Promise<ScopeState> {
     index,
     command: isCommandEntry(entry) ? entry.command : undefined
   }));
-  const managedIndex = commandEntries.findIndex((entry) => entry.command === scope.managedCommand);
+  const managedCommands = getManagedCommands(scope);
+  const managedIndex = commandEntries.findIndex((entry) => entry.command !== undefined && managedCommands.includes(entry.command));
   const hasAnySubagentHooks = hookEntries.length > 0;
-  const hasCustomCommands = commandEntries.some((entry) => entry.command && entry.command !== scope.managedCommand);
+  const hasCustomCommands = commandEntries.some((entry) => entry.command && !managedCommands.includes(entry.command));
   const hasInvalidEntries = hookEntries.some((entry) => !isCommandEntry(entry));
   const ruleIssue = scope.rulePath && !ruleState.exists
     ? 'the managed project rule is missing'
@@ -1271,7 +1275,8 @@ function summarizeWorkspaceState(globalScope: ScopeState, workspaceStates: Works
 async function setManagedBlock(scope: ScopeState, shouldBlock: boolean): Promise<void> {
   const data = await loadEditableHooksConfig(scope.hooksJsonPath);
   const existing = Array.isArray(data.hooks.subagentStart) ? [...data.hooks.subagentStart] : [];
-  const withoutManaged = existing.filter((entry) => entry.command !== scope.managedCommand);
+  const managedCommands = getManagedCommands(scope);
+  const withoutManaged = existing.filter((entry) => !managedCommands.includes(entry.command));
 
   if (shouldBlock) {
     withoutManaged.unshift({ command: scope.managedCommand });
@@ -1330,6 +1335,10 @@ function normalizeHooksConfig(input: unknown): HooksConfig {
     version: typeof base.version === 'number' ? base.version : 1,
     hooks
   };
+}
+
+function getManagedCommands(scope: ScopeDescriptor): string[] {
+  return [scope.managedCommand, ...(scope.legacyManagedCommands ?? [])];
 }
 
 async function ensureManagedScript(scriptPath: string): Promise<void> {

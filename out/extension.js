@@ -40,7 +40,8 @@ const fsp = __importStar(require("fs/promises"));
 const os = __importStar(require("os"));
 const path = __importStar(require("path"));
 const vscode = __importStar(require("vscode"));
-const GLOBAL_COMMAND = 'bash hooks/block-subagent.sh';
+const GLOBAL_COMMAND = 'bash ~/.cursor/hooks/block-subagent.sh';
+const LEGACY_GLOBAL_COMMAND = 'bash hooks/block-subagent.sh';
 const PROJECT_COMMAND = 'bash .cursor/hooks/block-subagent.sh';
 const MANAGED_RULE_FILE_NAME = 'cursor-subagent-toggle.mdc';
 const MANAGED_RULE_GITIGNORE_ENTRY = `.cursor/rules/${MANAGED_RULE_FILE_NAME}`;
@@ -834,7 +835,8 @@ async function inspectGlobalScope() {
         baseDir: getGlobalCursorDir(),
         hooksJsonPath: getGlobalHooksJsonPath(),
         scriptPath: getGlobalScriptPath(),
-        managedCommand: GLOBAL_COMMAND
+        managedCommand: GLOBAL_COMMAND,
+        legacyManagedCommands: [LEGACY_GLOBAL_COMMAND]
     });
 }
 async function inspectProjectScope(folder) {
@@ -892,9 +894,10 @@ async function inspectScope(scope) {
         index,
         command: isCommandEntry(entry) ? entry.command : undefined
     }));
-    const managedIndex = commandEntries.findIndex((entry) => entry.command === scope.managedCommand);
+    const managedCommands = getManagedCommands(scope);
+    const managedIndex = commandEntries.findIndex((entry) => entry.command !== undefined && managedCommands.includes(entry.command));
     const hasAnySubagentHooks = hookEntries.length > 0;
-    const hasCustomCommands = commandEntries.some((entry) => entry.command && entry.command !== scope.managedCommand);
+    const hasCustomCommands = commandEntries.some((entry) => entry.command && !managedCommands.includes(entry.command));
     const hasInvalidEntries = hookEntries.some((entry) => !isCommandEntry(entry));
     const ruleIssue = scope.rulePath && !ruleState.exists
         ? 'the managed project rule is missing'
@@ -1041,7 +1044,8 @@ function summarizeWorkspaceState(globalScope, workspaceStates) {
 async function setManagedBlock(scope, shouldBlock) {
     const data = await loadEditableHooksConfig(scope.hooksJsonPath);
     const existing = Array.isArray(data.hooks.subagentStart) ? [...data.hooks.subagentStart] : [];
-    const withoutManaged = existing.filter((entry) => entry.command !== scope.managedCommand);
+    const managedCommands = getManagedCommands(scope);
+    const withoutManaged = existing.filter((entry) => !managedCommands.includes(entry.command));
     if (shouldBlock) {
         withoutManaged.unshift({ command: scope.managedCommand });
         await ensureManagedScript(scope.scriptPath);
@@ -1091,6 +1095,9 @@ function normalizeHooksConfig(input) {
         version: typeof base.version === 'number' ? base.version : 1,
         hooks
     };
+}
+function getManagedCommands(scope) {
+    return [scope.managedCommand, ...(scope.legacyManagedCommands ?? [])];
 }
 async function ensureManagedScript(scriptPath) {
     await fsp.mkdir(path.dirname(scriptPath), { recursive: true });

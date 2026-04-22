@@ -76,7 +76,7 @@ Global blocker command:
   "version": 1,
   "hooks": {
     "subagentStart": [
-      { "command": "bash hooks/block-subagent.sh" }
+      { "command": "bash ~/.cursor/hooks/block-subagent.sh" }
     ]
   }
 }
@@ -195,7 +195,7 @@ workspace 카드는 생성 파일 두 개와 `hooks.json`이 git에서 무시되
   "version": 1,
   "hooks": {
     "subagentStart": [
-      { "command": "bash hooks/block-subagent.sh" }
+      { "command": "bash ~/.cursor/hooks/block-subagent.sh" }
     ]
   }
 }

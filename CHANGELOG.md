@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.7 - 2026-04-22
+
+### English
+
+- Changed the global managed blocker command to `bash ~/.cursor/hooks/block-subagent.sh`.
+- Kept the previous global command recognized as extension-managed so existing configs can be cleaned up safely.
+
+### 한국어
+
+- 전역 managed blocker command를 `bash ~/.cursor/hooks/block-subagent.sh`로 변경했습니다.
+- 기존 전역 command도 extension-managed 항목으로 인식해서 기존 설정을 안전하게 정리할 수 있게 했습니다.
+
 ## 0.1.6 - 2026-04-22
 
 ### English
