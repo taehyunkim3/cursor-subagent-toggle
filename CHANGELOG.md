@@ -8,6 +8,8 @@
 - Added the second managed hook script at `.cursor/hooks/block-task-tool.sh` alongside `.cursor/hooks/block-subagent.sh`.
 - Kept global managed commands rooted at `~/.cursor/hooks/...` and workspace commands rooted at `.cursor/hooks/...`.
 - Moved managed project rule installation behind an optional workspace checkbox, disabled by default.
+- Labeled the optional managed project rule as recommended off and moved it into the workspace More dialog.
+- Labeled generated file and hooks.json git ignore checkboxes as recommended on.
 - Updated status checks, sidebar details, and generated `.gitignore` handling for the two-script hook setup.
 
 ### 한국어
@@ -16,6 +18,8 @@
 - `.cursor/hooks/block-subagent.sh`와 함께 두 번째 managed hook script인 `.cursor/hooks/block-task-tool.sh`를 추가했습니다.
 - 전역 managed command는 `~/.cursor/hooks/...`, workspace command는 기존처럼 `.cursor/hooks/...` 경로를 사용합니다.
 - managed project rule 설치는 기본 비활성 상태의 workspace 체크박스 옵션으로 분리했습니다.
+- 선택 managed project rule은 권장 off로 표기하고 workspace 더보기 팝업 안에서만 수정할 수 있게 했습니다.
+- 생성 파일 및 hooks.json git 무시 체크박스는 권장 on으로 표기했습니다.
 - 두 스크립트 hook 구성에 맞춰 상태 확인, 사이드바 표시, 생성 파일 `.gitignore` 처리를 업데이트했습니다.
 
 ## 0.1.7 - 2026-04-22

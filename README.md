@@ -21,9 +21,9 @@ The extension shows global and workspace states together in a dedicated sidebar 
 - Safe handling for custom or partial managed hooks (`CHECK` state)
 - One-click `Apply Recommended Config` to install the managed `preToolUse(Task)` and `subagentStart` hook pair
 - Hooks-only blocking by default, using two managed scripts
-- Optional managed project rule injection behind a workspace checkbox, disabled by default
-- A workspace checkbox to add only the generated blocker scripts and optional managed project rule path to `.gitignore`
-- A separate workspace checkbox to add only `.cursor/hooks.json` to `.gitignore`
+- Optional managed project rule injection inside the workspace `More` dialog, labeled recommended off
+- A workspace checkbox to add only the generated blocker scripts and optional managed project rule path to `.gitignore`, labeled recommended on
+- A separate workspace checkbox to add only `.cursor/hooks.json` to `.gitignore`, labeled recommended on
 
 ### Toggle Semantics
 
@@ -31,15 +31,15 @@ The extension shows global and workspace states together in a dedicated sidebar 
 - Toggle `OFF` means the managed blocker is enabled in that local scope.
 - Workspace `OFF` writes both managed deny hooks and two managed hook scripts.
 - Workspace `ON` removes only the managed hook entries from `.cursor/hooks.json`.
-- The managed project rule is installed only when the workspace rule checkbox is enabled.
-- Turning the rule checkbox off deletes only `.cursor/rules/cursor-subagent-toggle.mdc` when it still matches the extension-managed content.
+- The managed project rule is installed only when the workspace rule checkbox is enabled inside the `More` dialog.
+- Turning the rule checkbox off in `More` deletes only `.cursor/rules/cursor-subagent-toggle.mdc` when it still matches the extension-managed content.
 - Existing user-created `.cursor/rules/*.mdc` files are not modified, merged, or deleted.
 - The local git ignore checkbox adds only `.cursor/hooks/block-subagent.sh`, `.cursor/hooks/block-task-tool.sh`, and the optional managed rule path to the workspace `.gitignore`.
 - The checkbox is checked only when all generated file paths are already ignored by the workspace `.gitignore`.
 - The separate hooks.json checkbox adds only `.cursor/hooks.json` to the workspace `.gitignore`.
 - The hooks.json checkbox is checked only when `.cursor/hooks.json` is already ignored by the workspace `.gitignore`.
 - When the checkbox is turned off, the extension removes only its own managed `.gitignore` marker block and leaves user-defined ignore rules intact.
-- Global `OFF` writes the global deny hooks only. It installs workspace managed rules only for folders where the optional rule checkbox is enabled.
+- Global `OFF` writes the global deny hooks only. It installs workspace managed rules only for folders where the optional rule checkbox is enabled in `More`.
 - Global `ON` removes the global deny hooks and removes the managed project rule only from workspace folders that are not locally `OFF`.
 - Effective final state still follows Cursor scope priority: global blocking can override a local workspace.
 
@@ -54,7 +54,7 @@ The extension shows global and workspace states together in a dedicated sidebar 
 The sidebar also shows the optional managed project rule state:
 
 - `Managed`: The extension-managed project rule exists and matches the expected content.
-- `Missing`: The managed project rule is missing while the optional rule checkbox is enabled and the effective state is blocked.
+- `Missing`: The managed project rule is missing while the optional rule checkbox is enabled in `More` and the effective state is blocked.
 - `Modified - protected`: The managed project rule file exists but no longer matches the extension content. The extension does not delete modified rule content.
 
 The workspace card also shows whether generated blocker paths and `hooks.json` are ignored by git. If the exact ignore entries already exist outside extension-managed blocks, they are shown as `Already ignored` and are not removed by the extension.
@@ -109,7 +109,7 @@ Global blocker command:
 
 ### Optional Managed Project Rule
 
-When a workspace needs prompt-context protection and the rule checkbox is enabled, the extension creates only this file:
+When a workspace needs prompt-context protection and the rule checkbox is enabled in `More`, the extension creates only this file:
 
 ```text
 .cursor/rules/cursor-subagent-toggle.mdc
@@ -166,9 +166,9 @@ Cursor Subagent Toggle은 기본적으로 hooks를 관리해서 Cursor의 subage
 - 커스텀 또는 일부 managed hook에 대한 안전 모드(`CHECK` 상태)
 - `Apply Recommended Config` 버튼으로 관리 `preToolUse(Task)` 및 `subagentStart` hook pair 설치
 - 기본값은 두 managed script를 사용하는 hooks-only 차단
-- subagent 비활성화 시 더 강한 prompt-context 지시를 위한 managed project rule은 기본 비활성 workspace 체크박스 옵션으로 제공
-- 생성된 blocker script들과 선택 managed project rule 경로만 `.gitignore`에 추가하는 workspace 체크박스 제공
-- `.cursor/hooks.json` 파일만 `.gitignore`에 추가하는 별도 workspace 체크박스 제공
+- subagent 비활성화 시 더 강한 prompt-context 지시를 위한 managed project rule은 workspace `더보기` 팝업 안에서 제공하며 권장 off로 표시
+- 생성된 blocker script들과 선택 managed project rule 경로만 `.gitignore`에 추가하는 workspace 체크박스 제공, 권장 on으로 표시
+- `.cursor/hooks.json` 파일만 `.gitignore`에 추가하는 별도 workspace 체크박스 제공, 권장 on으로 표시
 
 ### 토글 의미
 
@@ -176,15 +176,15 @@ Cursor Subagent Toggle은 기본적으로 hooks를 관리해서 Cursor의 subage
 - 토글 `OFF`: 해당 로컬 범위에서 managed blocker 활성화
 - 워크스페이스 `OFF`: managed deny hook 두 개와 managed hook script 두 개를 생성
 - 워크스페이스 `ON`: `.cursor/hooks.json`에서 managed hook entry만 제거
-- managed project rule은 workspace rule 체크박스가 켜져 있을 때만 설치
-- rule 체크박스를 끄면 `.cursor/rules/cursor-subagent-toggle.mdc`가 extension 관리 내용과 일치할 때만 삭제
+- managed project rule은 `더보기` 팝업 안의 workspace rule 체크박스가 켜져 있을 때만 설치
+- `더보기`의 rule 체크박스를 끄면 `.cursor/rules/cursor-subagent-toggle.mdc`가 extension 관리 내용과 일치할 때만 삭제
 - 사용자가 만든 기존 `.cursor/rules/*.mdc` 파일은 수정, 병합, 삭제하지 않음
 - 로컬 git ignore 체크박스는 workspace `.gitignore`에 `.cursor/hooks/block-subagent.sh`, `.cursor/hooks/block-task-tool.sh` 및 선택 managed rule 경로만 추가
 - 체크박스는 생성 파일 경로가 모두 workspace `.gitignore`에 포함되어 있을 때만 체크됨
 - 별도 hooks.json 체크박스는 workspace `.gitignore`에 `.cursor/hooks.json` 파일만 추가
 - hooks.json 체크박스는 `.cursor/hooks.json`이 workspace `.gitignore`에 포함되어 있을 때만 체크됨
 - 체크박스를 끄면 extension이 만든 `.gitignore` marker block만 제거하고, 사용자가 정의한 ignore rule은 그대로 둠
-- 전역 `OFF`: 전역 deny hooks만 적용. workspace managed rule은 해당 폴더의 선택 rule 체크박스가 켜져 있을 때만 설치
+- 전역 `OFF`: 전역 deny hooks만 적용. workspace managed rule은 해당 폴더의 `더보기` 선택 rule 체크박스가 켜져 있을 때만 설치
 - 전역 `ON`: 전역 deny hooks를 제거하고, 로컬이 `OFF`가 아닌 workspace folder에서만 managed project rule 삭제
 - 최종 상태는 Cursor 범위 우선순위의 영향을 받으며, 전역 차단이 로컬 상태를 override할 수 있음
 
@@ -199,7 +199,7 @@ Cursor Subagent Toggle은 기본적으로 hooks를 관리해서 Cursor의 subage
 사이드바는 선택 managed project rule 상태도 함께 보여줍니다.
 
 - `관리됨`: extension이 관리하는 project rule이 있고 예상 내용과 일치함
-- `없음`: 선택 rule 체크박스가 켜져 있고 최종 상태가 차단인데 managed project rule이 없음
+- `없음`: `더보기`의 선택 rule 체크박스가 켜져 있고 최종 상태가 차단인데 managed project rule이 없음
 - `수정됨 - 보호`: managed project rule 파일이 있지만 extension 내용과 다름. extension은 수정된 rule 내용을 삭제하지 않음
 
 workspace 카드는 생성 blocker 경로들과 `hooks.json`이 git에서 무시되는지도 보여줍니다. extension이 만든 block 밖에 동일한 ignore entry들이 이미 있으면 `이미 무시됨`으로 표시하고 extension이 삭제하지 않습니다.
@@ -254,7 +254,7 @@ workspace 카드는 생성 blocker 경로들과 `hooks.json`이 git에서 무시
 
 ### Optional Managed Project Rule
 
-워크스페이스에 prompt-context 보호가 필요하고 rule 체크박스가 켜져 있을 때 extension은 아래 파일 하나만 생성합니다.
+워크스페이스에 prompt-context 보호가 필요하고 `더보기`의 rule 체크박스가 켜져 있을 때 extension은 아래 파일 하나만 생성합니다.
 
 ```text
 .cursor/rules/cursor-subagent-toggle.mdc

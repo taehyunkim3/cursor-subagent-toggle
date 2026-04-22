@@ -128,6 +128,9 @@ const STRINGS = {
         workspaceTitle: 'Workspace Folders',
         noWorkspaceFolders: 'No workspace folders are open in this window.',
         openControls: 'Open more actions',
+        more: 'More',
+        close: 'Close',
+        advancedSettings: 'Advanced settings',
         refresh: 'Refresh',
         blockerToggleGlobal: 'Global subagent enabled',
         blockerToggleLocal: 'Local subagent enabled',
@@ -150,17 +153,17 @@ const STRINGS = {
         ruleMissingValue: 'Missing',
         ruleModifiedValue: 'Modified - protected',
         ruleDisabledValue: 'Optional - off',
-        optionalRule: 'Also install managed project rule',
+        optionalRule: 'Also install managed project rule (Recommended off)',
         optionalRuleHelp: 'Adds the managed Cursor rule only when this checkbox is on. Hooks remain the default blocker.',
         optionalRuleDone: '{name}: managed project rule option was updated.',
-        gitignoreRule: 'Ignore generated blocker files in git',
+        gitignoreRule: 'Ignore generated blocker files in git (Recommended on)',
         gitignoreRuleHelp: 'Adds only .cursor/hooks/block-subagent.sh, .cursor/hooks/block-task-tool.sh, and the optional managed rule path to this workspace .gitignore.',
         gitignoreStatus: '.gitignore',
         gitignoreEnabledValue: 'Enabled',
         gitignoreDisabledValue: 'Disabled',
         gitignoreExternalValue: 'Already ignored',
         gitignorePreferenceDone: '{name}: managed rule git ignore preference was updated.',
-        hooksJsonGitignoreRule: 'Ignore hooks.json in git',
+        hooksJsonGitignoreRule: 'Ignore hooks.json in git (Recommended on)',
         hooksJsonGitignoreRuleHelp: 'Adds only .cursor/hooks.json to this workspace .gitignore.',
         hooksJsonGitignoreStatus: 'hooks.json .gitignore',
         hooksJsonGitignoreDone: '{name}: hooks.json git ignore setting was updated.',
@@ -207,6 +210,9 @@ const STRINGS = {
         workspaceTitle: '워크스페이스 폴더',
         noWorkspaceFolders: '이 창에는 열린 workspace folder가 없습니다.',
         openControls: '추가 액션 열기',
+        more: '더보기',
+        close: '닫기',
+        advancedSettings: '고급 설정',
         refresh: '새로고침',
         blockerToggleGlobal: '전역 subagent 활성화',
         blockerToggleLocal: '로컬 subagent 활성화',
@@ -229,17 +235,17 @@ const STRINGS = {
         ruleMissingValue: '없음',
         ruleModifiedValue: '수정됨 - 보호',
         ruleDisabledValue: '선택 기능 - 꺼짐',
-        optionalRule: '관리 project rule도 함께 설치',
+        optionalRule: '관리 project rule도 함께 설치 (권장 off)',
         optionalRuleHelp: '이 체크박스가 켜져 있을 때만 관리 Cursor rule을 추가합니다. 기본 차단은 hooks만 사용합니다.',
         optionalRuleDone: '{name}: 관리 project rule 옵션을 업데이트했습니다.',
-        gitignoreRule: '생성된 blocker 파일을 git에서 무시',
+        gitignoreRule: '생성된 blocker 파일을 git에서 무시 (권장 on)',
         gitignoreRuleHelp: '이 workspace .gitignore에 .cursor/hooks/block-subagent.sh, .cursor/hooks/block-task-tool.sh 및 선택 관리 rule 경로만 추가합니다.',
         gitignoreStatus: '.gitignore',
         gitignoreEnabledValue: '활성',
         gitignoreDisabledValue: '비활성',
         gitignoreExternalValue: '이미 무시됨',
         gitignorePreferenceDone: '{name}: managed rule git ignore 설정을 업데이트했습니다.',
-        hooksJsonGitignoreRule: 'hooks.json을 git에서 무시',
+        hooksJsonGitignoreRule: 'hooks.json을 git에서 무시 (권장 on)',
         hooksJsonGitignoreRuleHelp: '이 workspace .gitignore에 .cursor/hooks.json 파일만 추가합니다.',
         hooksJsonGitignoreStatus: 'hooks.json .gitignore',
         hooksJsonGitignoreDone: '{name}: hooks.json git ignore 설정을 업데이트했습니다.',
@@ -1741,6 +1747,47 @@ function renderSidebarHtml(webview, snapshot, language, controller) {
       flex-wrap: wrap;
       margin-top: 10px;
     }
+    .modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 10;
+    }
+    .modal.is-open {
+      display: flex;
+    }
+    .modal-panel {
+      width: min(100%, 360px);
+      max-height: 86vh;
+      overflow: auto;
+      background: var(--vscode-editorWidget-background);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+    }
+    .modal-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .modal-title {
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+    .icon-button {
+      width: 32px;
+      min-height: 32px;
+      padding: 0;
+      flex: 0 0 auto;
+    }
     @media (max-width: 340px) {
       body { padding: 8px; }
       .toolbar, .card { padding: 10px; border-radius: 12px; }
@@ -1830,6 +1877,28 @@ function renderSidebarHtml(webview, snapshot, language, controller) {
     document.querySelectorAll('[data-action="restore-workspace-rule"]').forEach((button) => {
       button.addEventListener('click', () => vscode.postMessage({ type: 'restoreWorkspaceRule', folderUri: button.dataset.folderUri }));
     });
+    document.querySelectorAll('[data-action="open-workspace-settings"]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const modal = Array.from(document.querySelectorAll('[data-settings-modal]')).find((item) => item.dataset.folderUri === button.dataset.folderUri);
+        modal?.classList.add('is-open');
+        modal?.setAttribute('aria-hidden', 'false');
+      });
+    });
+    document.querySelectorAll('[data-action="close-workspace-settings"]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const modal = button.closest('[data-settings-modal]');
+        modal?.classList.remove('is-open');
+        modal?.setAttribute('aria-hidden', 'true');
+      });
+    });
+    document.querySelectorAll('[data-settings-modal]').forEach((modal) => {
+      modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+          modal.classList.remove('is-open');
+          modal.setAttribute('aria-hidden', 'true');
+        }
+      });
+    });
     document.querySelectorAll('[data-action="toggle-workspace-rule"]').forEach((input) => {
       input.addEventListener('change', (event) => vscode.postMessage({
         type: 'toggleWorkspaceRule',
@@ -1894,13 +1963,6 @@ function renderScopeCard(scope, options) {
     </div>
 
     ${options.folderUri ? `<label class="checkbox-row">
-      <input type="checkbox" data-action="toggle-workspace-rule" data-folder-uri="${escapeHtmlAttribute(options.folderUri)}"${options.rulePreferenceEnabled ? ' checked' : ''}>
-      <span class="switch-copy">
-        <strong>${escapeHtml(strings.optionalRule)}</strong>
-        <span class="hint">${escapeHtml(strings.optionalRuleHelp)}</span>
-      </span>
-    </label>
-    <label class="checkbox-row">
       <input type="checkbox" data-action="toggle-workspace-gitignore" data-folder-uri="${escapeHtmlAttribute(options.folderUri)}"${scope.gitignoreHasAllManagedEntries ? ' checked' : ''}>
       <span class="switch-copy">
         <strong>${escapeHtml(strings.gitignoreRule)}</strong>
@@ -1913,7 +1975,28 @@ function renderScopeCard(scope, options) {
         <strong>${escapeHtml(strings.hooksJsonGitignoreRule)}</strong>
         <span class="hint">${escapeHtml(strings.hooksJsonGitignoreRuleHelp)}</span>
       </span>
-    </label>` : ''}
+    </label>
+    <div class="actions">
+      <button data-action="open-workspace-settings" data-folder-uri="${escapeHtmlAttribute(options.folderUri)}">${escapeHtml(strings.more)}</button>
+    </div>
+    <div class="modal" data-settings-modal data-folder-uri="${escapeHtmlAttribute(options.folderUri)}" aria-hidden="true">
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-label="${escapeHtmlAttribute(strings.advancedSettings)}">
+        <div class="modal-header">
+          <div>
+            <div class="modal-title">${escapeHtml(strings.advancedSettings)}</div>
+            <div class="hint">${escapeHtml(scope.name)}</div>
+          </div>
+          <button class="icon-button" data-action="close-workspace-settings" aria-label="${escapeHtmlAttribute(strings.close)}">x</button>
+        </div>
+        <label class="checkbox-row">
+          <input type="checkbox" data-action="toggle-workspace-rule" data-folder-uri="${escapeHtmlAttribute(options.folderUri)}"${options.rulePreferenceEnabled ? ' checked' : ''}>
+          <span class="switch-copy">
+            <strong>${escapeHtml(strings.optionalRule)}</strong>
+            <span class="hint">${escapeHtml(strings.optionalRuleHelp)}</span>
+          </span>
+        </label>
+      </div>
+    </div>` : ''}
 
     ${isOverriddenByGlobal ? `<div class="warning">
       <div class="hint">${escapeHtml(strings.overriddenByGlobal)}</div>
