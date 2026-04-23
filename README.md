@@ -90,22 +90,29 @@ Global blocker command:
 {
   "version": 1,
   "hooks": {
+    "sessionStart": [
+      {
+        "command": "bash ./hooks/inject-ask-context.sh"
+      }
+    ],
     "preToolUse": [
       {
-        "command": "bash ~/.cursor/hooks/block-task-tool.sh",
+        "command": "bash ./hooks/block-task-tool.sh",
         "matcher": "Task",
         "failClosed": true
       }
     ],
     "subagentStart": [
       {
-        "command": "bash ~/.cursor/hooks/block-subagent.sh",
+        "command": "bash ./hooks/block-subagent.sh",
         "failClosed": true
       }
     ]
   }
 }
 ```
+
+Existing non-managed hooks such as `sessionStart` are preserved when applying or toggling the managed global blocker.
 
 ### Optional Managed Project Rule
 
@@ -235,22 +242,29 @@ workspace 카드는 생성 blocker 경로들과 `hooks.json`이 git에서 무시
 {
   "version": 1,
   "hooks": {
+    "sessionStart": [
+      {
+        "command": "bash ./hooks/inject-ask-context.sh"
+      }
+    ],
     "preToolUse": [
       {
-        "command": "bash ~/.cursor/hooks/block-task-tool.sh",
+        "command": "bash ./hooks/block-task-tool.sh",
         "matcher": "Task",
         "failClosed": true
       }
     ],
     "subagentStart": [
       {
-        "command": "bash ~/.cursor/hooks/block-subagent.sh",
+        "command": "bash ./hooks/block-subagent.sh",
         "failClosed": true
       }
     ]
   }
 }
 ```
+
+`sessionStart` 같은 기존 non-managed hook은 전역 blocker를 적용하거나 토글해도 유지됩니다.
 
 ### Optional Managed Project Rule
 

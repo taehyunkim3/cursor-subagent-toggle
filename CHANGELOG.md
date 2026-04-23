@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.9 - 2026-04-23
+
+### English
+
+- Changed newly written global managed hook commands to `bash ./hooks/...` while still recognizing previous `~/.cursor/hooks/...` and `bash hooks/...` entries as managed.
+- Documented that existing non-managed hooks such as `sessionStart` are preserved when applying or toggling the global blocker.
+
+### 한국어
+
+- 새로 작성되는 전역 managed hook command를 `bash ./hooks/...`로 변경하고, 기존 `~/.cursor/hooks/...` 및 `bash hooks/...` 항목도 managed 항목으로 계속 인식합니다.
+- 전역 blocker 적용 및 토글 시 `sessionStart` 같은 기존 non-managed hook이 유지된다는 점을 문서화했습니다.
+
 ## 0.1.8 - 2026-04-22
 
 ### English

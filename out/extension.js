@@ -40,10 +40,10 @@ const fsp = __importStar(require("fs/promises"));
 const os = __importStar(require("os"));
 const path = __importStar(require("path"));
 const vscode = __importStar(require("vscode"));
-const GLOBAL_COMMAND = 'bash ~/.cursor/hooks/block-subagent.sh';
-const GLOBAL_TASK_COMMAND = 'bash ~/.cursor/hooks/block-task-tool.sh';
-const LEGACY_GLOBAL_COMMAND = 'bash hooks/block-subagent.sh';
-const LEGACY_GLOBAL_TASK_COMMAND = 'bash hooks/block-task-tool.sh';
+const GLOBAL_COMMAND = 'bash ./hooks/block-subagent.sh';
+const GLOBAL_TASK_COMMAND = 'bash ./hooks/block-task-tool.sh';
+const LEGACY_GLOBAL_COMMANDS = ['bash ~/.cursor/hooks/block-subagent.sh', 'bash hooks/block-subagent.sh'];
+const LEGACY_GLOBAL_TASK_COMMANDS = ['bash ~/.cursor/hooks/block-task-tool.sh', 'bash hooks/block-task-tool.sh'];
 const PROJECT_COMMAND = 'bash .cursor/hooks/block-subagent.sh';
 const PROJECT_TASK_COMMAND = 'bash .cursor/hooks/block-task-tool.sh';
 const MANAGED_RULE_FILE_NAME = 'cursor-subagent-toggle.mdc';
@@ -917,8 +917,8 @@ async function inspectGlobalScope() {
         taskScriptPath: getGlobalTaskScriptPath(),
         managedCommand: GLOBAL_COMMAND,
         managedTaskCommand: GLOBAL_TASK_COMMAND,
-        legacyManagedCommands: [LEGACY_GLOBAL_COMMAND],
-        legacyManagedTaskCommands: [LEGACY_GLOBAL_TASK_COMMAND]
+        legacyManagedCommands: LEGACY_GLOBAL_COMMANDS,
+        legacyManagedTaskCommands: LEGACY_GLOBAL_TASK_COMMANDS
     });
 }
 async function inspectProjectScope(folder) {

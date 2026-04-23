@@ -2,7 +2,7 @@
   "name": "cursor-subagent-toggle",
   "displayName": "Cursor Subagent Toggle",
   "description": "Toggle Cursor subagent hooks globally and per workspace folder, with status bar feedback for single-folder and multi-root workspaces.",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "publisher": "taehyunkim3",
   "icon": "media/marketplace-icon.png",
   "license": "UNLICENSED",
