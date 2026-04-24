@@ -303,3 +303,31 @@ rule은 아래 문구로 시작합니다.
 .cursor/hooks.json
 # End Cursor Subagent Toggle
 ```
+
+### Development
+
+Run the full local verification before packaging or publishing:
+
+```sh
+npm run check
+```
+
+This runs TypeScript compilation and the Vitest unit test suite for the shared hook/gitignore helpers.
+
+### License
+
+This project is `UNLICENSED`. See `LICENSE` for the full all-rights-reserved notice.
+
+### 개발
+
+패키징 또는 배포 전 아래 명령으로 전체 로컬 검증을 실행하세요.
+
+```sh
+npm run check
+```
+
+이 명령은 TypeScript 컴파일과 hook/gitignore 공용 helper에 대한 Vitest 단위 테스트를 실행합니다.
+
+### 라이선스
+
+이 프로젝트는 `UNLICENSED`입니다. 전체 all-rights-reserved 고지는 `LICENSE`를 확인하세요.

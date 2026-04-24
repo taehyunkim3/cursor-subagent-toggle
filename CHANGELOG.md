@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### English
+
+- Added unit tests for shared hook and `.gitignore` helpers.
+- Hardened Task-related `preToolUse` status detection, webview nonce generation, and webview message validation.
+- Split shared types, i18n strings, core helpers, and sidebar rendering into separate modules.
+- Declared workspace extension execution and unsupported untrusted/virtual workspace capabilities.
+- Documented local verification and the current unlicensed distribution status.
+
+### 한국어
+
+- 공유 hook 및 `.gitignore` helper에 대한 단위 테스트를 추가했습니다.
+- Task 관련 `preToolUse` 상태 판정, webview nonce 생성, webview message 검증을 보강했습니다.
+- 공유 타입, i18n 문자열, core helper, sidebar 렌더링을 별도 모듈로 분리했습니다.
+- workspace extension 실행 및 untrusted/virtual workspace 미지원 capability를 명시했습니다.
+- 로컬 검증 방법과 현재 unlicensed 배포 상태를 문서화했습니다.
+
 ## 0.1.9 - 2026-04-23
 
 ### English

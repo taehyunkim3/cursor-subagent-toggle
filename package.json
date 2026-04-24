@@ -27,6 +27,16 @@
   "categories": [
     "Other"
   ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "This extension writes Cursor hook files and generated ignore entries into the active workspace."
+    },
+    "virtualWorkspaces": false
+  },
   "files": [
     "out/**",
     "media/**",
