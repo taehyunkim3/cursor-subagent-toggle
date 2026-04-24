@@ -40,25 +40,13 @@ const fsp = __importStar(require("fs/promises"));
 const os = __importStar(require("os"));
 const path = __importStar(require("path"));
 const vscode = __importStar(require("vscode"));
+const core_1 = require("./core");
 const GLOBAL_COMMAND = 'bash ./hooks/block-subagent.sh';
 const GLOBAL_TASK_COMMAND = 'bash ./hooks/block-task-tool.sh';
 const LEGACY_GLOBAL_COMMANDS = ['bash ~/.cursor/hooks/block-subagent.sh', 'bash hooks/block-subagent.sh'];
 const LEGACY_GLOBAL_TASK_COMMANDS = ['bash ~/.cursor/hooks/block-task-tool.sh', 'bash hooks/block-task-tool.sh'];
 const PROJECT_COMMAND = 'bash .cursor/hooks/block-subagent.sh';
 const PROJECT_TASK_COMMAND = 'bash .cursor/hooks/block-task-tool.sh';
-const MANAGED_RULE_FILE_NAME = 'cursor-subagent-toggle.mdc';
-const MANAGED_RULE_GITIGNORE_ENTRY = `.cursor/rules/${MANAGED_RULE_FILE_NAME}`;
-const MANAGED_SCRIPT_GITIGNORE_ENTRY = '.cursor/hooks/block-subagent.sh';
-const MANAGED_TASK_SCRIPT_GITIGNORE_ENTRY = '.cursor/hooks/block-task-tool.sh';
-const MANAGED_GITIGNORE_ENTRIES = [
-    MANAGED_SCRIPT_GITIGNORE_ENTRY,
-    MANAGED_TASK_SCRIPT_GITIGNORE_ENTRY,
-    MANAGED_RULE_GITIGNORE_ENTRY
-];
-const MANAGED_GITIGNORE_START = '# Cursor Subagent Toggle: managed generated files';
-const HOOKS_JSON_GITIGNORE_ENTRY = '.cursor/hooks.json';
-const HOOKS_JSON_GITIGNORE_START = '# Cursor Subagent Toggle: hooks config ignore';
-const MANAGED_GITIGNORE_END = '# End Cursor Subagent Toggle';
 const BLOCKER_SCRIPT = `#!/bin/bash
 # Deny all subagent creation unconditionally.
 # Uses exit-0 + JSON permission:deny (the canonical deny pattern).
@@ -324,7 +312,7 @@ class SubagentController {
         const hookWatcher = vscode.workspace.createFileSystemWatcher('**/.cursor/hooks.json');
         const scriptWatcher = vscode.workspace.createFileSystemWatcher('**/.cursor/hooks/block-subagent.sh');
         const taskScriptWatcher = vscode.workspace.createFileSystemWatcher('**/.cursor/hooks/block-task-tool.sh');
-        const ruleWatcher = vscode.workspace.createFileSystemWatcher(`**/.cursor/rules/${MANAGED_RULE_FILE_NAME}`);
+        const ruleWatcher = vscode.workspace.createFileSystemWatcher(`**/.cursor/rules/${core_1.MANAGED_RULE_FILE_NAME}`);
         const gitignoreWatcher = vscode.workspace.createFileSystemWatcher('**/.gitignore');
         const triggerRefresh = () => this.scheduleRefresh();
         hookWatcher.onDidCreate(triggerRefresh, this, this.context.subscriptions);
@@ -968,7 +956,7 @@ async function inspectScope(scope) {
         };
     }
     const hooksConfig = configState.data;
-    const hooksRoot = isObject(hooksConfig) && isObject(hooksConfig.hooks) ? hooksConfig.hooks : undefined;
+    const hooksRoot = (0, core_1.isObject)(hooksConfig) && (0, core_1.isObject)(hooksConfig.hooks) ? hooksConfig.hooks : undefined;
     const preToolUseHooks = hooksRoot?.preToolUse;
     const subagentHooks = hooksRoot?.subagentStart;
     if (preToolUseHooks !== undefined && !Array.isArray(preToolUseHooks)) {
@@ -988,26 +976,26 @@ async function inspectScope(scope) {
     const hookEntries = Array.isArray(subagentHooks) ? subagentHooks : [];
     const commandEntries = hookEntries.map((entry, index) => ({
         index,
-        command: isCommandEntry(entry) ? entry.command : undefined
+        command: (0, core_1.isCommandEntry)(entry) ? entry.command : undefined
     }));
     const managedTaskCommands = getManagedTaskCommands(scope);
     const taskHookEntries = Array.isArray(preToolUseHooks)
-        ? preToolUseHooks.filter((entry) => !isCommandEntry(entry)
+        ? preToolUseHooks.filter((entry) => !(0, core_1.isCommandEntry)(entry)
             || managedTaskCommands.includes(entry.command)
-            || isTaskPreToolUseEntry(entry))
+            || (0, core_1.isTaskPreToolUseEntry)(entry))
         : [];
     const taskCommandEntries = taskHookEntries.map((entry, index) => ({
         index,
-        command: isCommandEntry(entry) ? entry.command : undefined
+        command: (0, core_1.isCommandEntry)(entry) ? entry.command : undefined
     }));
     const managedCommands = getManagedCommands(scope);
     const managedIndex = commandEntries.findIndex((entry) => entry.command !== undefined && managedCommands.includes(entry.command));
     const managedTaskIndex = taskCommandEntries.findIndex((entry) => entry.command !== undefined && managedTaskCommands.includes(entry.command));
     const hasAnySubagentHooks = hookEntries.length > 0;
     const hasCustomCommands = commandEntries.some((entry) => entry.command && !managedCommands.includes(entry.command));
-    const hasInvalidEntries = hookEntries.some((entry) => !isCommandEntry(entry));
+    const hasInvalidEntries = hookEntries.some((entry) => !(0, core_1.isCommandEntry)(entry));
     const hasCustomTaskCommands = taskCommandEntries.some((entry) => entry.command && !managedTaskCommands.includes(entry.command));
-    const hasInvalidTaskEntries = taskHookEntries.some((entry) => !isCommandEntry(entry));
+    const hasInvalidTaskEntries = taskHookEntries.some((entry) => !(0, core_1.isCommandEntry)(entry));
     if (managedIndex === 0 && managedTaskIndex === 0) {
         if (!scriptState.exists) {
             return {
@@ -1191,8 +1179,8 @@ async function loadEditableHooksConfig(hooksJsonPath) {
     if (configState.error) {
         throw new Error(`Fix invalid JSON first: ${formatShortPath(hooksJsonPath)}`);
     }
-    if (isObject(configState.data) && configState.data.hooks !== undefined) {
-        if (!isObject(configState.data.hooks)) {
+    if ((0, core_1.isObject)(configState.data) && configState.data.hooks !== undefined) {
+        if (!(0, core_1.isObject)(configState.data.hooks)) {
             throw new Error(`Fix invalid hooks object first: ${formatShortPath(hooksJsonPath)}`);
         }
         if (configState.data.hooks.preToolUse !== undefined && !Array.isArray(configState.data.hooks.preToolUse)) {
@@ -1202,7 +1190,7 @@ async function loadEditableHooksConfig(hooksJsonPath) {
             throw new Error(`Fix invalid subagentStart first: ${formatShortPath(hooksJsonPath)}`);
         }
     }
-    return normalizeHooksConfig(configState.data);
+    return (0, core_1.normalizeHooksConfig)(configState.data);
 }
 async function writeManagedHookArrays(hooksJsonPath, config, preToolUse, subagentStart) {
     if (preToolUse && preToolUse.length > 0) {
@@ -1219,15 +1207,6 @@ async function writeManagedHookArrays(hooksJsonPath, config, preToolUse, subagen
     }
     await fsp.mkdir(path.dirname(hooksJsonPath), { recursive: true });
     await fsp.writeFile(hooksJsonPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
-}
-function normalizeHooksConfig(input) {
-    const base = isObject(input) ? { ...input } : {};
-    const hooks = isObject(base.hooks) ? { ...base.hooks } : {};
-    return {
-        ...base,
-        version: typeof base.version === 'number' ? base.version : 1,
-        hooks
-    };
 }
 function getManagedCommands(scope) {
     return [scope.managedCommand, ...(scope.legacyManagedCommands ?? [])];
@@ -1268,16 +1247,16 @@ async function ensureManagedGitignoreEntry(gitignorePath) {
         return;
     }
     const existing = await readGitignoreRaw(gitignorePath);
-    const managedBlock = `${MANAGED_GITIGNORE_START}\n${MANAGED_GITIGNORE_ENTRIES.join('\n')}\n${MANAGED_GITIGNORE_END}\n`;
+    const managedBlock = `${core_1.MANAGED_GITIGNORE_START}\n${core_1.MANAGED_GITIGNORE_ENTRIES.join('\n')}\n${core_1.MANAGED_GITIGNORE_END}\n`;
     if (existing === undefined) {
         await fsp.writeFile(gitignorePath, managedBlock, 'utf8');
         return;
     }
-    const gitignoreState = parseGitignoreState(existing);
+    const gitignoreState = (0, core_1.parseGitignoreState)(existing);
     if (gitignoreState.hasAllManagedEntries) {
         return;
     }
-    const normalized = normalizeLineEndings(existing);
+    const normalized = (0, core_1.normalizeLineEndings)(existing);
     const separator = normalized.length > 0 && !normalized.endsWith('\n') ? '\n' : '';
     const spacer = normalized.length > 0 && !normalized.endsWith('\n\n') ? '\n' : '';
     await fsp.writeFile(gitignorePath, `${normalized}${separator}${spacer}${managedBlock}`, 'utf8');
@@ -1290,7 +1269,7 @@ async function deleteManagedGitignoreBlock(gitignorePath) {
     if (existing === undefined) {
         return;
     }
-    const next = removeManagedGitignoreBlock(existing);
+    const next = (0, core_1.removeManagedGitignoreBlock)(existing);
     if (next === existing) {
         return;
     }
@@ -1301,16 +1280,16 @@ async function ensureHooksJsonGitignoreEntry(gitignorePath) {
         return;
     }
     const existing = await readGitignoreRaw(gitignorePath);
-    const hooksJsonBlock = `${HOOKS_JSON_GITIGNORE_START}\n${HOOKS_JSON_GITIGNORE_ENTRY}\n${MANAGED_GITIGNORE_END}\n`;
+    const hooksJsonBlock = `${core_1.HOOKS_JSON_GITIGNORE_START}\n${core_1.HOOKS_JSON_GITIGNORE_ENTRY}\n${core_1.MANAGED_GITIGNORE_END}\n`;
     if (existing === undefined) {
         await fsp.writeFile(gitignorePath, hooksJsonBlock, 'utf8');
         return;
     }
-    const gitignoreState = parseGitignoreState(existing);
+    const gitignoreState = (0, core_1.parseGitignoreState)(existing);
     if (gitignoreState.hasHooksJsonEntry) {
         return;
     }
-    const normalized = normalizeLineEndings(existing);
+    const normalized = (0, core_1.normalizeLineEndings)(existing);
     const separator = normalized.length > 0 && !normalized.endsWith('\n') ? '\n' : '';
     const spacer = normalized.length > 0 && !normalized.endsWith('\n\n') ? '\n' : '';
     await fsp.writeFile(gitignorePath, `${normalized}${separator}${spacer}${hooksJsonBlock}`, 'utf8');
@@ -1323,7 +1302,7 @@ async function deleteHooksJsonGitignoreBlock(gitignorePath) {
     if (existing === undefined) {
         return;
     }
-    const next = removeGitignoreBlock(existing, HOOKS_JSON_GITIGNORE_START);
+    const next = (0, core_1.removeGitignoreBlock)(existing, core_1.HOOKS_JSON_GITIGNORE_START);
     if (next === existing) {
         return;
     }
@@ -1388,7 +1367,7 @@ async function readGitignoreFile(filePath) {
     }
     return {
         exists: true,
-        ...parseGitignoreState(raw)
+        ...(0, core_1.parseGitignoreState)(raw)
     };
 }
 async function readRuleFile(filePath) {
@@ -1402,7 +1381,7 @@ async function readRuleFile(filePath) {
         const raw = await fsp.readFile(filePath, 'utf8');
         return {
             exists: true,
-            matchesManagedRule: normalizeLineEndings(raw) === normalizeLineEndings(MANAGED_RULE)
+            matchesManagedRule: (0, core_1.normalizeLineEndings)(raw) === (0, core_1.normalizeLineEndings)(MANAGED_RULE)
         };
     }
     catch (error) {
@@ -2142,67 +2121,13 @@ function getGlobalTaskScriptPath() {
     return path.join(getGlobalCursorDir(), 'hooks', 'block-task-tool.sh');
 }
 function getProjectRulePath(baseDir) {
-    return path.join(baseDir, '.cursor', 'rules', MANAGED_RULE_FILE_NAME);
+    return path.join(baseDir, '.cursor', 'rules', core_1.MANAGED_RULE_FILE_NAME);
 }
 function getGitignorePreferenceKey(folderUri) {
     return `${GITIGNORE_PREF_PREFIX}${folderUri}`;
 }
 function getRulePreferenceKey(folderUri) {
     return `${RULE_PREF_PREFIX}${folderUri}`;
-}
-function normalizeLineEndings(value) {
-    return value.replace(/\r\n/g, '\n');
-}
-function parseGitignoreState(raw) {
-    const lines = normalizeLineEndings(raw).split('\n').map((line) => line.trim());
-    const hasManagedRuleEntry = lines.includes(MANAGED_RULE_GITIGNORE_ENTRY);
-    const hasManagedScriptEntry = lines.includes(MANAGED_SCRIPT_GITIGNORE_ENTRY);
-    const hasManagedTaskScriptEntry = lines.includes(MANAGED_TASK_SCRIPT_GITIGNORE_ENTRY);
-    const hasHooksJsonEntry = lines.includes(HOOKS_JSON_GITIGNORE_ENTRY);
-    return {
-        hasManagedRuleEntry,
-        hasManagedScriptEntry,
-        hasManagedTaskScriptEntry,
-        hasAllManagedEntries: hasManagedRuleEntry && hasManagedScriptEntry && hasManagedTaskScriptEntry,
-        hasManagedBlock: lines.includes(MANAGED_GITIGNORE_START) && lines.includes(MANAGED_GITIGNORE_END),
-        hasHooksJsonEntry,
-        hasHooksJsonBlock: lines.includes(HOOKS_JSON_GITIGNORE_START) && lines.includes(MANAGED_GITIGNORE_END)
-    };
-}
-function removeManagedGitignoreBlock(raw) {
-    return removeGitignoreBlock(raw, MANAGED_GITIGNORE_START);
-}
-function removeGitignoreBlock(raw, startMarker) {
-    const normalized = normalizeLineEndings(raw);
-    const lines = normalized.split('\n');
-    const nextLines = [];
-    let isInsideManagedBlock = false;
-    let removed = false;
-    for (const line of lines) {
-        if (line.trim() === startMarker) {
-            isInsideManagedBlock = true;
-            removed = true;
-            continue;
-        }
-        if (isInsideManagedBlock) {
-            if (line.trim() === MANAGED_GITIGNORE_END) {
-                isInsideManagedBlock = false;
-            }
-            continue;
-        }
-        nextLines.push(line);
-    }
-    if (!removed) {
-        return raw;
-    }
-    return trimTrailingBlankLines(nextLines).join('\n');
-}
-function trimTrailingBlankLines(lines) {
-    const next = [...lines];
-    while (next.length > 0 && next[next.length - 1] === '') {
-        next.pop();
-    }
-    return next.length > 0 ? [...next, ''] : [];
 }
 function escapeHtml(value) {
     return value
@@ -2220,13 +2145,4 @@ function createNonce() {
 }
 function interpolate(template, values) {
     return template.replace(/\{(\w+)\}/g, (_, key) => values[key] ?? '');
-}
-function isObject(value) {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-function isCommandEntry(value) {
-    return isObject(value) && typeof value.command === 'string';
-}
-function isTaskPreToolUseEntry(entry) {
-    return entry.matcher === undefined || entry.matcher === 'Task';
 }

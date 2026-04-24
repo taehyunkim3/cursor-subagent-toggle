@@ -3,6 +3,25 @@ import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import {
+  GitignoreFileResult,
+  HOOKS_JSON_GITIGNORE_ENTRY,
+  HOOKS_JSON_GITIGNORE_START,
+  HooksCommandEntry,
+  HooksConfig,
+  MANAGED_GITIGNORE_END,
+  MANAGED_GITIGNORE_ENTRIES,
+  MANAGED_GITIGNORE_START,
+  MANAGED_RULE_FILE_NAME,
+  isCommandEntry,
+  isObject,
+  isTaskPreToolUseEntry,
+  normalizeHooksConfig,
+  normalizeLineEndings,
+  parseGitignoreState,
+  removeGitignoreBlock,
+  removeManagedGitignoreBlock
+} from './core';
 
 const GLOBAL_COMMAND = 'bash ./hooks/block-subagent.sh';
 const GLOBAL_TASK_COMMAND = 'bash ./hooks/block-task-tool.sh';
@@ -10,19 +29,6 @@ const LEGACY_GLOBAL_COMMANDS = ['bash ~/.cursor/hooks/block-subagent.sh', 'bash 
 const LEGACY_GLOBAL_TASK_COMMANDS = ['bash ~/.cursor/hooks/block-task-tool.sh', 'bash hooks/block-task-tool.sh'];
 const PROJECT_COMMAND = 'bash .cursor/hooks/block-subagent.sh';
 const PROJECT_TASK_COMMAND = 'bash .cursor/hooks/block-task-tool.sh';
-const MANAGED_RULE_FILE_NAME = 'cursor-subagent-toggle.mdc';
-const MANAGED_RULE_GITIGNORE_ENTRY = `.cursor/rules/${MANAGED_RULE_FILE_NAME}`;
-const MANAGED_SCRIPT_GITIGNORE_ENTRY = '.cursor/hooks/block-subagent.sh';
-const MANAGED_TASK_SCRIPT_GITIGNORE_ENTRY = '.cursor/hooks/block-task-tool.sh';
-const MANAGED_GITIGNORE_ENTRIES = [
-  MANAGED_SCRIPT_GITIGNORE_ENTRY,
-  MANAGED_TASK_SCRIPT_GITIGNORE_ENTRY,
-  MANAGED_RULE_GITIGNORE_ENTRY
-];
-const MANAGED_GITIGNORE_START = '# Cursor Subagent Toggle: managed generated files';
-const HOOKS_JSON_GITIGNORE_ENTRY = '.cursor/hooks.json';
-const HOOKS_JSON_GITIGNORE_START = '# Cursor Subagent Toggle: hooks config ignore';
-const MANAGED_GITIGNORE_END = '# End Cursor Subagent Toggle';
 const BLOCKER_SCRIPT = `#!/bin/bash
 # Deny all subagent creation unconditionally.
 # Uses exit-0 + JSON permission:deny (the canonical deny pattern).
@@ -103,31 +109,6 @@ interface ScriptFileResult {
 interface RuleFileResult {
   exists: boolean;
   matchesManagedRule: boolean;
-}
-
-interface GitignoreFileResult {
-  exists: boolean;
-  hasManagedRuleEntry: boolean;
-  hasManagedScriptEntry: boolean;
-  hasManagedTaskScriptEntry: boolean;
-  hasAllManagedEntries: boolean;
-  hasManagedBlock: boolean;
-  hasHooksJsonEntry: boolean;
-  hasHooksJsonBlock: boolean;
-}
-
-interface HooksCommandEntry {
-  command: string;
-  [key: string]: unknown;
-}
-
-interface HooksConfig {
-  version: number;
-  hooks: Record<string, unknown> & {
-    preToolUse?: HooksCommandEntry[];
-    subagentStart?: HooksCommandEntry[];
-  };
-  [key: string]: unknown;
 }
 
 interface ScopeDescriptor {
@@ -1493,17 +1474,6 @@ async function writeManagedHookArrays(
   await fsp.writeFile(hooksJsonPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
 }
 
-function normalizeHooksConfig(input: unknown): HooksConfig {
-  const base = isObject(input) ? { ...input } : {};
-  const hooks = isObject(base.hooks) ? { ...base.hooks } : {};
-
-  return {
-    ...base,
-    version: typeof base.version === 'number' ? base.version : 1,
-    hooks
-  };
-}
-
 function getManagedCommands(scope: ScopeDescriptor): string[] {
   return [scope.managedCommand, ...(scope.legacyManagedCommands ?? [])];
 }
@@ -2521,72 +2491,6 @@ function getRulePreferenceKey(folderUri: string): string {
   return `${RULE_PREF_PREFIX}${folderUri}`;
 }
 
-function normalizeLineEndings(value: string): string {
-  return value.replace(/\r\n/g, '\n');
-}
-
-function parseGitignoreState(raw: string): Omit<GitignoreFileResult, 'exists'> {
-  const lines = normalizeLineEndings(raw).split('\n').map((line) => line.trim());
-  const hasManagedRuleEntry = lines.includes(MANAGED_RULE_GITIGNORE_ENTRY);
-  const hasManagedScriptEntry = lines.includes(MANAGED_SCRIPT_GITIGNORE_ENTRY);
-  const hasManagedTaskScriptEntry = lines.includes(MANAGED_TASK_SCRIPT_GITIGNORE_ENTRY);
-  const hasHooksJsonEntry = lines.includes(HOOKS_JSON_GITIGNORE_ENTRY);
-
-  return {
-    hasManagedRuleEntry,
-    hasManagedScriptEntry,
-    hasManagedTaskScriptEntry,
-    hasAllManagedEntries: hasManagedRuleEntry && hasManagedScriptEntry && hasManagedTaskScriptEntry,
-    hasManagedBlock: lines.includes(MANAGED_GITIGNORE_START) && lines.includes(MANAGED_GITIGNORE_END),
-    hasHooksJsonEntry,
-    hasHooksJsonBlock: lines.includes(HOOKS_JSON_GITIGNORE_START) && lines.includes(MANAGED_GITIGNORE_END)
-  };
-}
-
-function removeManagedGitignoreBlock(raw: string): string {
-  return removeGitignoreBlock(raw, MANAGED_GITIGNORE_START);
-}
-
-function removeGitignoreBlock(raw: string, startMarker: string): string {
-  const normalized = normalizeLineEndings(raw);
-  const lines = normalized.split('\n');
-  const nextLines: string[] = [];
-  let isInsideManagedBlock = false;
-  let removed = false;
-
-  for (const line of lines) {
-    if (line.trim() === startMarker) {
-      isInsideManagedBlock = true;
-      removed = true;
-      continue;
-    }
-
-    if (isInsideManagedBlock) {
-      if (line.trim() === MANAGED_GITIGNORE_END) {
-        isInsideManagedBlock = false;
-      }
-      continue;
-    }
-
-    nextLines.push(line);
-  }
-
-  if (!removed) {
-    return raw;
-  }
-
-  return trimTrailingBlankLines(nextLines).join('\n');
-}
-
-function trimTrailingBlankLines(lines: string[]): string[] {
-  const next = [...lines];
-  while (next.length > 0 && next[next.length - 1] === '') {
-    next.pop();
-  }
-
-  return next.length > 0 ? [...next, ''] : [];
-}
-
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -2606,16 +2510,4 @@ function createNonce(): string {
 
 function interpolate(template: string, values: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? '');
-}
-
-function isObject(value: unknown): value is Record<string, any> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isCommandEntry(value: unknown): value is HooksCommandEntry {
-  return isObject(value) && typeof value.command === 'string';
-}
-
-function isTaskPreToolUseEntry(entry: HooksCommandEntry): boolean {
-  return entry.matcher === undefined || entry.matcher === 'Task';
 }
