@@ -1215,22 +1215,28 @@ async function inspectScope(scope: ScopeDescriptor): Promise<ScopeState> {
   }
 
   const hookEntries = Array.isArray(subagentHooks) ? subagentHooks : [];
-  const taskHookEntries = Array.isArray(preToolUseHooks) ? preToolUseHooks : [];
   const commandEntries = hookEntries.map((entry, index) => ({
     index,
     command: isCommandEntry(entry) ? entry.command : undefined
   }));
+  const managedTaskCommands = getManagedTaskCommands(scope);
+  const taskHookEntries = Array.isArray(preToolUseHooks)
+    ? preToolUseHooks.filter((entry) => !isCommandEntry(entry)
+      || managedTaskCommands.includes(entry.command)
+      || isTaskPreToolUseEntry(entry))
+    : [];
   const taskCommandEntries = taskHookEntries.map((entry, index) => ({
     index,
     command: isCommandEntry(entry) ? entry.command : undefined
   }));
   const managedCommands = getManagedCommands(scope);
-  const managedTaskCommands = getManagedTaskCommands(scope);
   const managedIndex = commandEntries.findIndex((entry) => entry.command !== undefined && managedCommands.includes(entry.command));
   const managedTaskIndex = taskCommandEntries.findIndex((entry) => entry.command !== undefined && managedTaskCommands.includes(entry.command));
   const hasAnySubagentHooks = hookEntries.length > 0;
   const hasCustomCommands = commandEntries.some((entry) => entry.command && !managedCommands.includes(entry.command));
   const hasInvalidEntries = hookEntries.some((entry) => !isCommandEntry(entry));
+  const hasCustomTaskCommands = taskCommandEntries.some((entry) => entry.command && !managedTaskCommands.includes(entry.command));
+  const hasInvalidTaskEntries = taskHookEntries.some((entry) => !isCommandEntry(entry));
   if (managedIndex === 0 && managedTaskIndex === 0) {
     if (!scriptState.exists) {
       return {
@@ -1287,19 +1293,19 @@ async function inspectScope(scope: ScopeDescriptor): Promise<ScopeState> {
     };
   }
 
-  if (hasInvalidEntries) {
+  if (hasInvalidEntries || hasInvalidTaskEntries) {
     return {
       ...base,
       status: 'unknown',
-      reason: 'subagentStart contains unsupported entries that cannot be evaluated safely'
+      reason: 'Task-related preToolUse or subagentStart contains unsupported entries that cannot be evaluated safely'
     };
   }
 
-  if (hasCustomCommands || hasAnySubagentHooks) {
+  if (hasCustomCommands || hasCustomTaskCommands || hasAnySubagentHooks) {
     return {
       ...base,
       status: 'unknown',
-      reason: 'Custom subagentStart hooks exist, so the final allow/deny result cannot be inferred safely'
+      reason: 'Custom Task-related preToolUse or subagentStart hooks exist, so the final allow/deny result cannot be inferred safely'
     };
   }
 
@@ -2608,4 +2614,8 @@ function isObject(value: unknown): value is Record<string, any> {
 
 function isCommandEntry(value: unknown): value is HooksCommandEntry {
   return isObject(value) && typeof value.command === 'string';
+}
+
+function isTaskPreToolUseEntry(entry: HooksCommandEntry): boolean {
+  return entry.matcher === undefined || entry.matcher === 'Task';
 }
