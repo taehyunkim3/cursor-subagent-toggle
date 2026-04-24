@@ -37,6 +37,7 @@ exports.activate = activate;
 exports.deactivate = deactivate;
 const fs = __importStar(require("fs"));
 const fsp = __importStar(require("fs/promises"));
+const crypto = __importStar(require("crypto"));
 const os = __importStar(require("os"));
 const path = __importStar(require("path"));
 const vscode = __importStar(require("vscode"));
@@ -835,8 +836,11 @@ class SidebarWebviewProvider {
         webviewView.webview.options = {
             enableScripts: true
         };
-        webviewView.webview.onDidReceiveMessage((message) => {
-            void this.controller.handleSidebarMessage(message);
+        webviewView.webview.onDidReceiveMessage((rawMessage) => {
+            const message = parseSidebarMessage(rawMessage);
+            if (message) {
+                void this.controller.handleSidebarMessage(message);
+            }
         });
         this.update(this.controller.getSnapshot(), this.controller.getLanguage());
     }
@@ -2141,8 +2145,45 @@ function escapeHtmlAttribute(value) {
     return escapeHtml(value);
 }
 function createNonce() {
-    return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    return crypto.randomBytes(16).toString('base64').replace(/[+/=]/g, '');
 }
 function interpolate(template, values) {
     return template.replace(/\{(\w+)\}/g, (_, key) => values[key] ?? '');
+}
+function parseSidebarMessage(value) {
+    if (!(0, core_1.isObject)(value) || typeof value.type !== 'string') {
+        return undefined;
+    }
+    switch (value.type) {
+        case 'refresh':
+        case 'showActions':
+        case 'applyRecommendedGlobal':
+            return { type: value.type };
+        case 'setLanguage':
+            return value.language === 'en' || value.language === 'ko'
+                ? { type: 'setLanguage', language: value.language }
+                : undefined;
+        case 'toggleGlobal':
+            return value.desiredEnabled === undefined || typeof value.desiredEnabled === 'boolean'
+                ? { type: 'toggleGlobal', desiredEnabled: value.desiredEnabled }
+                : undefined;
+        case 'applyRecommendedWorkspace':
+        case 'restoreWorkspaceRule':
+            return typeof value.folderUri === 'string'
+                ? { type: value.type, folderUri: value.folderUri }
+                : undefined;
+        case 'toggleWorkspace':
+            return typeof value.folderUri === 'string'
+                && (value.desiredEnabled === undefined || typeof value.desiredEnabled === 'boolean')
+                ? { type: 'toggleWorkspace', folderUri: value.folderUri, desiredEnabled: value.desiredEnabled }
+                : undefined;
+        case 'toggleWorkspaceRule':
+        case 'toggleWorkspaceGitignore':
+        case 'toggleWorkspaceHooksJsonGitignore':
+            return typeof value.folderUri === 'string' && typeof value.enabled === 'boolean'
+                ? { type: value.type, folderUri: value.folderUri, enabled: value.enabled }
+                : undefined;
+        default:
+            return undefined;
+    }
 }

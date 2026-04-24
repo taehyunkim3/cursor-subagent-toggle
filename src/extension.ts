@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
+import * as crypto from 'crypto';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -1043,8 +1044,11 @@ class SidebarWebviewProvider implements vscode.WebviewViewProvider {
       enableScripts: true
     };
 
-    webviewView.webview.onDidReceiveMessage((message: SidebarMessage) => {
-      void this.controller.handleSidebarMessage(message);
+    webviewView.webview.onDidReceiveMessage((rawMessage: unknown) => {
+      const message = parseSidebarMessage(rawMessage);
+      if (message) {
+        void this.controller.handleSidebarMessage(message);
+      }
     });
 
     this.update(this.controller.getSnapshot(), this.controller.getLanguage());
@@ -2505,9 +2509,48 @@ function escapeHtmlAttribute(value: string): string {
 }
 
 function createNonce(): string {
-  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  return crypto.randomBytes(16).toString('base64').replace(/[+/=]/g, '');
 }
 
 function interpolate(template: string, values: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? '');
+}
+
+function parseSidebarMessage(value: unknown): SidebarMessage | undefined {
+  if (!isObject(value) || typeof value.type !== 'string') {
+    return undefined;
+  }
+
+  switch (value.type) {
+    case 'refresh':
+    case 'showActions':
+    case 'applyRecommendedGlobal':
+      return { type: value.type };
+    case 'setLanguage':
+      return value.language === 'en' || value.language === 'ko'
+        ? { type: 'setLanguage', language: value.language }
+        : undefined;
+    case 'toggleGlobal':
+      return value.desiredEnabled === undefined || typeof value.desiredEnabled === 'boolean'
+        ? { type: 'toggleGlobal', desiredEnabled: value.desiredEnabled }
+        : undefined;
+    case 'applyRecommendedWorkspace':
+    case 'restoreWorkspaceRule':
+      return typeof value.folderUri === 'string'
+        ? { type: value.type, folderUri: value.folderUri }
+        : undefined;
+    case 'toggleWorkspace':
+      return typeof value.folderUri === 'string'
+        && (value.desiredEnabled === undefined || typeof value.desiredEnabled === 'boolean')
+        ? { type: 'toggleWorkspace', folderUri: value.folderUri, desiredEnabled: value.desiredEnabled }
+        : undefined;
+    case 'toggleWorkspaceRule':
+    case 'toggleWorkspaceGitignore':
+    case 'toggleWorkspaceHooksJsonGitignore':
+      return typeof value.folderUri === 'string' && typeof value.enabled === 'boolean'
+        ? { type: value.type, folderUri: value.folderUri, enabled: value.enabled }
+        : undefined;
+    default:
+      return undefined;
+  }
 }
